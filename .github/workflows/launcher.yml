@@ -1,12 +1,19 @@
 name: Run Discord Bot (6h loop)
 
 on:
-  workflow_dispatch: # Manuel başlatma
-  # schedule:        # <-- İstemezsen bunu silebilirsin
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    env:
+      TOKEN1: ${{ secrets.TOKEN1 }}
+      TOKEN2: ${{ secrets.TOKEN2 }}
+      CH_IDS: ${{ secrets.CH_IDS }}
+      OWO_ID: ${{ secrets.OWO_ID }}
+      REACTION_ID: ${{ secrets.REACTION_ID }}
+      WEBHOOK_URLS: ${{ secrets.WEBHOOK_URLS }}
+      DEFAULT_PRESENCE: ${{ secrets.DEFAULT_PRESENCE }}
 
     steps:
       - name: Checkout repo
@@ -20,11 +27,26 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Generate config/config.json from secrets
+        run: |
+          mkdir -p config
+          cat > config/config.json <<EOF
+          {
+            "tokens": ["$TOKEN1", "$TOKEN2"],
+            "CH_IDS": $CH_IDS,
+            "owo_ID": "$OWO_ID",
+            "reaction_ID": "$REACTION_ID",
+            "webhookUrls": $WEBHOOK_URLS,
+            "DEFAULT_PRESENCE": "$DEFAULT_PRESENCE"
+          }
+          EOF
+          cat config/config.json
+
       - name: Run bot for 6 hours
         run: |
           node launcher.js &
           BOT_PID=$!
-          sleep 21600   # 6 saat = 21600 saniye
+          sleep 21600   # 6 saat
           kill $BOT_PID || true
 
       - name: Trigger next run
