@@ -1,22 +1,22 @@
 name: Discord Bot Auto-Restart (6h)
 
 on:
-  workflow_dispatch:   # elle başlatmak için
+  workflow_dispatch:   # elle başlatabilirsin
   schedule:
-    - cron: '0 */6 * * *'   # 6 saatte bir açılır (yedek güvence)
+    - cron: '0 */6 * * *'   # yedek tetikleyici (her 6 saatte bir)
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360   # 6 saat limit
+    timeout-minutes: 360   # 6 saat
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
 
       - name: Install dependencies
         run: npm install
@@ -27,7 +27,7 @@ jobs:
   restart:
     needs: run-bot
     runs-on: ubuntu-latest
-    if: always()   # run-bot başarıyla bitse de, hata alsa da çalışır
+    if: always()   # run-bot hata alsa bile çalışır
     steps:
       - name: Restart this workflow
         run: |
