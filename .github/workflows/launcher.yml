@@ -12,7 +12,8 @@ jobs:
       CH_IDS: ${{ secrets.CH_IDS }}
       OWO_ID: ${{ secrets.OWO_ID }}
       REACTION_ID: ${{ secrets.REACTION_ID }}
-      WEBHOOK_URLS: ${{ secrets.WEBHOOK_URLS }}
+      WEBHOOK1: ${{ secrets.WEBHOOK1 }}
+      WEBHOOK2: ${{ secrets.WEBHOOK2 }}
       DEFAULT_PRESENCE: ${{ secrets.DEFAULT_PRESENCE }}
 
     steps:
@@ -30,23 +31,22 @@ jobs:
       - name: Generate config/config.json from secrets
         run: |
           mkdir -p config
-          cat > config/config.json <<EOF
+          cat <<EOF > config/config.json
           {
-            "tokens": ["$TOKEN1", "$TOKEN2"],
-            "CH_IDS": $CH_IDS,
-            "owo_ID": "$OWO_ID",
-            "reaction_ID": "$REACTION_ID",
-            "webhookUrls": $WEBHOOK_URLS,
-            "DEFAULT_PRESENCE": "$DEFAULT_PRESENCE"
+            "tokens": ["${TOKEN1}", "${TOKEN2}"],
+            "CH_IDS": ${CH_IDS},
+            "owo_ID": "${OWO_ID}",
+            "reaction_ID": "${REACTION_ID}",
+            "webhookUrls": ["${WEBHOOK1}", "${WEBHOOK2}"],
+            "DEFAULT_PRESENCE": "${DEFAULT_PRESENCE}"
           }
           EOF
-          cat config/config.json
 
       - name: Run bot for 6 hours
         run: |
           node launcher.js &
           BOT_PID=$!
-          sleep 21600   # 6 saat
+          sleep 21600   # 6 saat = 21600 saniye
           kill $BOT_PID || true
 
       - name: Trigger next run
