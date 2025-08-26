@@ -17,8 +17,8 @@ const {
 const DELAYS = {
     TYPING: { MIN: 200, MAX: 1000 },
     MESSAGE: { MIN: 200, MAX: 500 },
-    OWO: { MIN: 12000, MAX: 13500 },
-    WHWB: { MIN: 17000, MAX: 18500 },
+    OWO: { MIN: 11000, MAX: 11500 },
+    WHWB: { MIN: 16000, MAX: 16500 },
     SLEEP: { MIN: 30000, MAX: 60000 },
     CHANNEL_CYCLE: { MIN: 600000, MAX: 900000 },
     COMMAND_DELETE: { MIN: 300, MAX: 800 },
