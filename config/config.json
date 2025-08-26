@@ -1,14 +1,1 @@
-{
-  "tokens": [
-    ${{ secrets.TOKEN1 }}, ${{ secrets.TOKEN2 }}
-  ],
-  "CH_IDS": ["797486351033040926", "934480912853401710", "934480929932587068"],
-  "owo_ID": "408785106942164992",
-  "reaction_ID": "519287796549156864",
-  "webhookUrls": [
-    "https://discord.com/api/webhooks/1402021810186485831/SHgMt7OsKC5QNIKyBqoeqe73MhfexZOYc52eoDF284EFSOBQGgmFfGjAmZoc-NiVVygJ",
-    "https://discord.com/api/webhooks/1402022069679685712/1HC2smIiNxws4yOax-6Trgl0QTr4JAp5G_x9PaY_MQknK384Tm5UvYkS21p4zNT7oszj"
-  ],
-  "DEFAULT_PRESENCE": "invisible"
 
-}
