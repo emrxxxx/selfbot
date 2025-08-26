@@ -1,0 +1,237 @@
+name: Discord Selfbot 6-Hour Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_duration:
+        description: 'Run duration in hours'
+        required: true
+        default: '6'
+        type: choice
+        options:
+          - '1'
+          - '3'
+          - '6'
+          - '12'
+      environment:
+        description: 'Environment to run'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - 'production'
+          - 'staging'
+  schedule:
+    # Run automatically every 8 hours (to avoid overlapping)
+    - cron: '0 */8 * * *'
+
+jobs:
+  run-selfbot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 420  # 7 hours max (6 hours + 1 hour buffer)
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: |
+        npm install discord.js-selfbot-v13@latest @discordjs/voice@latest axios@latest chalk@latest
+    
+    - name: Create runtime config
+      run: |
+        mkdir -p config
+        cat > config/config.json << 'EOF'
+        {
+          "tokens": ${{ secrets.BOT_TOKENS }},
+          "CH_IDS": ${{ secrets.CHANNEL_IDS }},
+          "owo_ID": "408785106942164992",
+          "reaction_ID": "${{ secrets.REACTION_USER_ID }}",
+          "webhookUrls": ${{ secrets.WEBHOOK_URLS }},
+          "DEFAULT_PRESENCE": "invisible"
+        }
+        EOF
+    
+    - name: Validate configuration
+      run: |
+        echo "Validating configuration..."
+        node -e "
+          const config = require('./config/config.json');
+          if (!Array.isArray(config.tokens) || config.tokens.length === 0) {
+            throw new Error('No tokens configured');
+          }
+          if (!Array.isArray(config.CH_IDS) || config.CH_IDS.length === 0) {
+            throw new Error('No channels configured');
+          }
+          console.log('✅ Configuration valid');
+          console.log('Tokens:', config.tokens.length);
+          console.log('Channels:', config.CH_IDS.length);
+        "
+    
+    - name: Start health monitoring
+      run: |
+        # Create a simple health monitor script
+        cat > health_monitor.js << 'EOF'
+        const fs = require('fs');
+        const path = require('path');
+        
+        let healthChecks = 0;
+        const logFile = 'bot_health.log';
+        
+        function logHealth(message) {
+          const timestamp = new Date().toISOString();
+          const logEntry = `[${timestamp}] ${message}\n`;
+          fs.appendFileSync(logFile, logEntry);
+          console.log(logEntry.trim());
+        }
+        
+        function checkBotHealth() {
+          healthChecks++;
+          logHealth(`Health check #${healthChecks} - Bot still running`);
+          
+          // Check if bot process is still alive (basic check)
+          try {
+            const stats = fs.statSync('config/config.json');
+            logHealth(`Config file last modified: ${stats.mtime}`);
+          } catch (error) {
+            logHealth(`Warning: Config file check failed - ${error.message}`);
+          }
+        }
+        
+        // Run health check every 30 minutes
+        setInterval(checkBotHealth, 30 * 60 * 1000);
+        logHealth('Health monitor started');
+        
+        // Keep the process alive
+        process.on('SIGTERM', () => {
+          logHealth('Health monitor shutting down');
+          process.exit(0);
+        });
+        EOF
+        
+        # Start health monitor in background
+        node health_monitor.js &
+        echo $! > health_monitor.pid
+    
+    - name: Run selfbot for specified duration
+      timeout-minutes: ${{ fromJSON(github.event.inputs.run_duration || '6') * 60 + 30 }}
+      run: |
+        echo "🚀 Starting selfbot for ${{ github.event.inputs.run_duration || '6' }} hours..."
+        echo "Start time: $(date)"
+        
+        # Calculate end time
+        END_TIME=$(($(date +%s) + ${{ fromJSON(github.event.inputs.run_duration || '6') * 3600 }}))
+        echo "Will stop at: $(date -d @$END_TIME)"
+        
+        # Start the bot with timeout
+        timeout ${{ fromJSON(github.event.inputs.run_duration || '6') }}h node launcher.js &
+        BOT_PID=$!
+        echo "Bot started with PID: $BOT_PID"
+        
+        # Monitor the bot process
+        while kill -0 $BOT_PID 2>/dev/null; do
+          CURRENT_TIME=$(date +%s)
+          REMAINING=$((END_TIME - CURRENT_TIME))
+          
+          if [ $REMAINING -le 0 ]; then
+            echo "⏰ Time limit reached, stopping bot..."
+            kill -TERM $BOT_PID 2>/dev/null || true
+            sleep 5
+            kill -KILL $BOT_PID 2>/dev/null || true
+            break
+          fi
+          
+          HOURS=$((REMAINING / 3600))
+          MINUTES=$(((REMAINING % 3600) / 60))
+          echo "⏱️  Bot running... Time remaining: ${HOURS}h ${MINUTES}m"
+          
+          sleep 300  # Check every 5 minutes
+        done
+        
+        echo "✅ Bot execution completed"
+        echo "End time: $(date)"
+    
+    - name: Collect logs and statistics
+      if: always()
+      run: |
+        echo "📊 Collecting runtime statistics..."
+        
+        # Check if health log exists
+        if [ -f "bot_health.log" ]; then
+          echo "=== Health Monitor Log ==="
+          cat bot_health.log
+        fi
+        
+        # Show system resources used
+        echo "=== System Resource Usage ==="
+        echo "Memory usage:"
+        free -h
+        echo "Disk usage:"
+        df -h
+        
+        # Create summary
+        echo "=== Execution Summary ==="
+        echo "Workflow: ${{ github.workflow }}"
+        echo "Run ID: ${{ github.run_id }}"
+        echo "Environment: ${{ github.event.inputs.environment || 'production' }}"
+        echo "Duration: ${{ github.event.inputs.run_duration || '6' }} hours"
+        echo "Completed: $(date)"
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "🧹 Cleaning up..."
+        
+        # Stop health monitor if still running
+        if [ -f "health_monitor.pid" ]; then
+          HEALTH_PID=$(cat health_monitor.pid)
+          kill -TERM $HEALTH_PID 2>/dev/null || true
+        fi
+        
+        # Remove sensitive config
+        rm -f config/config.json
+        
+        # Archive logs
+        if [ -f "bot_health.log" ]; then
+          mv bot_health.log "bot_health_$(date +%Y%m%d_%H%M%S).log"
+        fi
+        
+        echo "✅ Cleanup completed"
+    
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bot-logs-${{ github.run_id }}
+        path: |
+          bot_health_*.log
+          *.log
+        retention-days: 7
+
+  notify-completion:
+    needs: run-selfbot
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Send completion notification
+      run: |
+        if [[ "${{ needs.run-selfbot.result }}" == "success" ]]; then
+          echo "✅ Selfbot completed successfully after ${{ github.event.inputs.run_duration || '6' }} hours"
+          STATUS="Success"
+        else
+          echo "❌ Selfbot execution failed or was cancelled"
+          STATUS="Failed"
+        fi
+        
+        # You can add webhook notification here if needed
+        echo "Execution Status: $STATUS"
+        echo "Duration: ${{ github.event.inputs.run_duration || '6' }} hours"
+        echo "Environment: ${{ github.event.inputs.environment || 'production' }}"
