@@ -223,13 +223,8 @@ async function resumeBot() {
     }
     if (!botState.isRunning) {
         botState.isRunning = true;
-        // Captcha durumu aktifse ve handler kapalıysa, resume sırasında captcha durumunu temizle
-        if (botState.captchaDetected && !botState.isCaptchaDmHandlerEnabled) {
-            console.log("Captcha handler is disabled. Clearing captcha state and resuming.");
-            await clearCaptchaState("Resume with handler disabled");
-        }
         console.log("Bot resumed");
-        await updateBotStatus(); // Update status when resuming
+        await updateBotStatus();
     }
 }
 
