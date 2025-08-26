@@ -385,10 +385,10 @@ async function whwbLoop() {
         try {
             const channelId = getCurrentChannelId();
             await sendTyping(channelId);
-            if (await sendMessage(channelId, "Wh")) {
+            if (await sendMessage(channelId, "Owo h")) {
                 await delay(getRandomInt(MIN_MSG_DELAY, MAX_MSG_DELAY));
                 await sendTyping(channelId);
-                await sendMessage(channelId, "Wb");
+                await sendMessage(channelId, "Owo b");
             }
             await randomSleep();
         } catch (error) {
