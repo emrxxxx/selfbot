@@ -10,8 +10,6 @@ jobs:
       TOKEN1: ${{ secrets.TOKEN1 }}
       TOKEN2: ${{ secrets.TOKEN2 }}
       CH_IDS: ${{ secrets.CH_IDS }}
-      OWO_ID: ${{ secrets.OWO_ID }}
-      REACTION_ID: ${{ secrets.REACTION_ID }}
       WEBHOOK1: ${{ secrets.WEBHOOK1 }}
       WEBHOOK2: ${{ secrets.WEBHOOK2 }}
       DEFAULT_PRESENCE: ${{ secrets.DEFAULT_PRESENCE }}
@@ -35,10 +33,10 @@ jobs:
           {
             "tokens": ["${TOKEN1}", "${TOKEN2}"],
             "CH_IDS": ${CH_IDS},
-            "owo_ID": "${OWO_ID}",
-            "reaction_ID": "${REACTION_ID}",
+            "owo_ID": "408785106942164992",
+            "reaction_ID": "519287796549156864",
             "webhookUrls": ["${WEBHOOK1}", "${WEBHOOK2}"],
-            "DEFAULT_PRESENCE": "${DEFAULT_PRESENCE}"
+            "DEFAULT_PRESENCE": "invisible"
           }
           EOF
 
@@ -46,7 +44,7 @@ jobs:
         run: |
           node launcher.js &
           BOT_PID=$!
-          sleep 21600   # 6 saat = 21600 saniye
+          sleep 21600   # 6 saat
           kill $BOT_PID || true
 
       - name: Trigger next run
