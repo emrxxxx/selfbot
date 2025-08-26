@@ -22,7 +22,7 @@ jobs:
         run: npm install
 
       - name: Run bot
-        run: node bot.js
+        run: node launcher.js
 
   restart:
     needs: run-bot
