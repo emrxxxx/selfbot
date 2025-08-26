@@ -1,56 +1,42 @@
 const axios = require('axios');
-const {
-    Client,
-    Intents,
-    DiscordAPIError
-} = require('discord.js-selfbot-v13');
-const {
-    joinVoiceChannel,
-    getVoiceConnection,
-    VoiceConnectionStatus,
-    entersState,
-    VoiceConnection,
-    VoiceConnectionDisconnectReason
-} = require('@discordjs/voice');
+const { Client, Intents } = require('discord.js-selfbot-v13');
 const config = require('./config/config.json');
-const {
-    logPre
-} = require('./modules/logger');
+const { logPre } = require('./modules/logger');
 
+// Configuration and Constants
 const token = process.argv[2];
-const {
-    CH_IDS: initialChannelIds = [],
-    owo_ID,
-    reaction_ID,
-    webhookUrl,
-    webhookUrls: configWebhookUrls = [],
-    DEFAULT_PRESENCE = 'invisible'
+const { 
+    CH_IDS: initialChannelIds = [], 
+    owo_ID, 
+    reaction_ID, 
+    webhookUrl, 
+    webhookUrls: configWebhookUrls = [], 
+    DEFAULT_PRESENCE = 'invisible' 
 } = config;
 
-const MIN_TYPING_DELAY = 200;
-const MAX_TYPING_DELAY = 1000;
-const MIN_MSG_DELAY = 200;
-const MAX_MSG_DELAY = 500;
-const MIN_OWO_INTERVAL = 12000;
-const MAX_OWO_INTERVAL = 13500;
-const MIN_WHWB_INTERVAL = 17000;
-const MAX_WHWB_INTERVAL = 18500;
-const MIN_SLEEP_DURATION = 30000;
-const MAX_SLEEP_DURATION = 60000;
-const MIN_CHANNEL_CYCLE_DELAY = 600000;
-const MAX_CHANNEL_CYCLE_DELAY = 900000;
-const COMMAND_DELETE_DELAY_MIN = 300;
-const COMMAND_DELETE_DELAY_MAX = 800;
-const STATUS_MESSAGE_DELETE_DELAY = 30000;
-const INFO_MESSAGE_DELETE_DELAY = 15000;
-const CAPTCHA_WEBHOOK_DELETE_TIMEOUT = 10 * 60 * 1000;
+const DELAYS = {
+    TYPING: { MIN: 200, MAX: 1000 },
+    MESSAGE: { MIN: 200, MAX: 500 },
+    OWO: { MIN: 12000, MAX: 13500 },
+    WHWB: { MIN: 17000, MAX: 18500 },
+    SLEEP: { MIN: 30000, MAX: 60000 },
+    CHANNEL_CYCLE: { MIN: 600000, MAX: 900000 },
+    COMMAND_DELETE: { MIN: 300, MAX: 800 },
+    STATUS_MESSAGE_DELETE: 30000,
+    INFO_MESSAGE_DELETE: 15000,
+    CAPTCHA_WEBHOOK_DELETE: 10 * 60 * 1000
+};
 
-const SLEEP_CHANCE = 0.016;
-const TYPING_CHANCE = 0.28;
+const PROBABILITIES = {
+    SLEEP: 0.016,
+    TYPING: 0.28
+};
+
 const CAPTCHA_KEYWORDS = ['captcha', 'verify', 'real', 'human?', 'ban', 'banned', 'suspend', 'complete verification'];
 const ERROR_WEBHOOK_USERNAME = 'Bot Error';
 const VALID_STATUSES = ['online', 'idle', 'dnd', 'invisible'];
 
+// Bot State
 let botState = {
     isRunning: false,
     isOwoEnabled: false,
@@ -61,11 +47,12 @@ let botState = {
     isCaptchaDmHandlerEnabled: true,
     currentChannelIndex: 0,
     channelIds: [...initialChannelIds],
-    voiceConnection: null,
+    // voiceConnection alanı kaldırıldı
     captchaWebhookMessages: [],
     captchaWebhookDeleteTimer: null
 };
 
+// Validation
 if (!token) {
     console.error('Token was not provided!');
     process.exit(1);
@@ -80,6 +67,7 @@ if (activeWebhookUrls.length === 0 && typeof webhookUrl === 'string' && webhookU
     activeWebhookUrls = [webhookUrl];
 }
 
+// Utility Functions
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getCurrentChannelId = () => botState.channelIds[botState.currentChannelIndex];
@@ -91,37 +79,24 @@ const shouldRunLoop = (loopType = 'any') => {
 };
 const parseWebhookUrl = (url) => {
     const match = url.match(/webhooks\/(\d+)\/([^\/?]+)/);
-    if (match && match.length === 3) {
-        return {
-            id: match[1],
-            token: match[2]
-        };
-    }
-    return null;
+    return match && match.length === 3 ? { id: match[1], token: match[2] } : null;
 };
 
+// Discord Client
 const client = new Client({
     checkUpdate: false,
-    ws: {
-        properties: {
-            $browser: "Discord iOS"
-        }
-    }
+    ws: { properties: { $browser: "Discord iOS" } }
 });
 
+// Core Functions
 async function updateBotStatus() {
     if (!client?.user) return;
 
     let newStatus;
-    if (botState.captchaDetected) {
-        newStatus = 'dnd'; // "Busy" interpreted as "Do Not Disturb"
-    } else if (!botState.isRunning) {
-        newStatus = 'idle'; // Bot stopped/paused
-    } else if (botState.isOwoEnabled) {
-        newStatus = 'online'; // .69 farming active
-    } else {
-        newStatus = DEFAULT_PRESENCE; // Fallback to config default (e.g., 'invisible')
-    }
+    if (botState.captchaDetected) newStatus = 'dnd';
+    else if (!botState.isRunning) newStatus = 'idle';
+    else if (botState.isOwoEnabled) newStatus = 'online';
+    else newStatus = DEFAULT_PRESENCE;
 
     try {
         await client.user.setPresence({ status: newStatus });
@@ -153,12 +128,12 @@ async function getChannelName(channelId) {
 }
 
 async function sendTyping(channelId) {
-    if (Math.random() >= TYPING_CHANCE) return;
+    if (Math.random() >= PROBABILITIES.TYPING) return;
     const channel = await getChannel(channelId);
     if (channel?.isText() && channel.type !== 'GUILD_FORUM') {
         try {
             await channel.sendTyping();
-            await delay(getRandomInt(MIN_TYPING_DELAY, MAX_TYPING_DELAY));
+            await delay(getRandomInt(DELAYS.TYPING.MIN, DELAYS.TYPING.MAX));
         } catch (error) {}
     }
 }
@@ -167,7 +142,7 @@ async function sendMessage(channelId, messageContent) {
     const channel = await getChannel(channelId);
     if (channel?.isText()) {
         try {
-            await delay(getRandomInt(MIN_MSG_DELAY, MAX_MSG_DELAY));
+            await delay(getRandomInt(DELAYS.MESSAGE.MIN, DELAYS.MESSAGE.MAX));
             await channel.send(messageContent);
             return true;
         } catch (error) {
@@ -202,9 +177,7 @@ async function sendWebhookMessage(content, username, avatarUrl, options = {}) {
         }
 
         const promise = axios.post(targetUrl, payload, {
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             timeout: 15000
         }).then(response => {
             if (options.wait && response.data?.id) {
@@ -228,9 +201,7 @@ async function deleteWebhookMessage(messageId, webhookId, webhookToken, reason =
     const deleteUrl = `https://discord.com/api/v9/webhooks/${webhookId}/${webhookToken}/messages/${messageId}`;
 
     try {
-        await axios.delete(deleteUrl, {
-            timeout: 10000
-        });
+        await axios.delete(deleteUrl, { timeout: 10000 });
         return true;
     } catch (deleteError) {
         return deleteError.response?.status === 404;
@@ -241,7 +212,7 @@ function stopBot(log = true) {
     if (botState.isRunning) {
         botState.isRunning = false;
         if (log) console.log('Bot paused');
-        updateBotStatus(); // Update status when stopping
+        updateBotStatus();
     }
 }
 
@@ -253,14 +224,14 @@ async function resumeBot() {
     if (!botState.isRunning) {
         botState.isRunning = true;
         console.log("Bot resumed");
-        await updateBotStatus(); // Update status when resuming
+        await updateBotStatus();
     }
 }
 
 function toggleBooleanState(stateKey, name) {
     botState[stateKey] = !botState[stateKey];
     console.log(`${name}: ${botState[stateKey] ? 'Enabled' : 'Disabled'}`);
-    updateBotStatus(); // Update status after toggling
+    updateBotStatus();
 }
 
 async function clearCaptchaState(reason = "Verification") {
@@ -292,21 +263,16 @@ async function notifyCaptcha() {
     await updateBotStatus();
     
     const captchaWebhookUsername = `${client.user?.displayName || 'Unknown User'}`;
-    const captchaWebhookAvatar = client.user?.displayAvatarURL({
-        dynamic: true,
-        format: "png"
-    });
-    const captchaMsg = `Captcha! ||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​|| <@&1402022346675720303> <@&1402022568730558615>`;
+    const captchaWebhookAvatar = client.user?.displayAvatarURL({ dynamic: true, format: "png" });
+    const captchaMsg = `[Captcha!](https://www.owobot.com/captcha) ||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​|| <@&1402022346675720303> <@&1402022568730558615>`;
 
-    const messageInfos = await sendWebhookMessage(captchaMsg, captchaWebhookUsername, captchaWebhookAvatar, {
-        wait: true
-    });
+    const messageInfos = await sendWebhookMessage(captchaMsg, captchaWebhookUsername, captchaWebhookAvatar, { wait: true });
 
     if (messageInfos.length > 0) {
         botState.captchaWebhookMessages = messageInfos;
         botState.captchaWebhookDeleteTimer = setTimeout(() => {
             clearCaptchaState("Timeout");
-        }, CAPTCHA_WEBHOOK_DELETE_TIMEOUT);
+        }, DELAYS.CAPTCHA_WEBHOOK_DELETE);
     }
 
     if (reaction_ID) {
@@ -346,9 +312,9 @@ async function handleCaptchaDM(message) {
 }
 
 async function randomSleep() {
-    if (shouldRunLoop() && Math.random() < SLEEP_CHANCE) {
+    if (shouldRunLoop() && Math.random() < PROBABILITIES.SLEEP) {
         botState.isSleeping = true;
-        const sleepDuration = getRandomInt(MIN_SLEEP_DURATION, MAX_SLEEP_DURATION);
+        const sleepDuration = getRandomInt(DELAYS.SLEEP.MIN, DELAYS.SLEEP.MAX);
         console.log(`Sleeping for ${Math.round(sleepDuration / 1000)}s`);
         await delay(sleepDuration);
         console.log("Woke up");
@@ -371,7 +337,7 @@ async function owoLoop() {
             await delay(5000);
         } finally {
             botState.isProcessingOwo = false;
-            await delay(getRandomInt(MIN_OWO_INTERVAL, MAX_OWO_INTERVAL));
+            await delay(getRandomInt(DELAYS.OWO.MIN, DELAYS.OWO.MAX));
         }
     }
 }
@@ -386,7 +352,7 @@ async function whwbLoop() {
             const channelId = getCurrentChannelId();
             await sendTyping(channelId);
             if (await sendMessage(channelId, "Owo h")) {
-                await delay(getRandomInt(MIN_MSG_DELAY, MAX_MSG_DELAY));
+                await delay(getRandomInt(DELAYS.MESSAGE.MIN, DELAYS.MESSAGE.MAX));
                 await sendTyping(channelId);
                 await sendMessage(channelId, "Owo b");
             }
@@ -395,7 +361,7 @@ async function whwbLoop() {
             await delay(5000);
         } finally {
             botState.isProcessingWhWb = false;
-            await delay(getRandomInt(MIN_WHWB_INTERVAL, MAX_WHWB_INTERVAL));
+            await delay(getRandomInt(DELAYS.WHWB.MIN, DELAYS.WHWB.MAX));
         }
     }
 }
@@ -405,7 +371,7 @@ async function cycleChannels() {
     console.log(`Channel cycling enabled (${botState.channelIds.length} channels)`);
 
     while (true) {
-        await delay(getRandomInt(MIN_CHANNEL_CYCLE_DELAY, MAX_CHANNEL_CYCLE_DELAY));
+        await delay(getRandomInt(DELAYS.CHANNEL_CYCLE.MIN, DELAYS.CHANNEL_CYCLE.MAX));
         if (shouldRunLoop() && botState.channelIds.length > 1) {
             botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
             const nextChannelId = getCurrentChannelId();
@@ -415,6 +381,7 @@ async function cycleChannels() {
     }
 }
 
+// Command Definitions
 const commands = {
     '.capx': {
         description: 'Toggles the OwO/WhWb message loop.',
@@ -426,15 +393,11 @@ const commands = {
     },
     '.on': {
         description: 'Resumes sending messages.',
-        execute: async () => {
-            await resumeBot();
-        }
+        execute: async () => { await resumeBot(); }
     },
     '.off': {
         description: 'Pauses sending messages.',
-        execute: () => {
-            stopBot();
-        }
+        execute: () => { stopBot(); }
     },
     '.next': {
         description: 'Manually cycles to the next channel.',
@@ -475,7 +438,7 @@ const commands = {
             Current Channel: #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
             \`\`\`
             `;
-            message.channel.send(statusMessage).then(reply => safeDeleteMessage(reply, STATUS_MESSAGE_DELETE_DELAY));
+            message.channel.send(statusMessage).then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE));
         }
     },
     '.setch': {
@@ -494,75 +457,8 @@ const commands = {
             }
         }
     },
-    '.git': {
-        description: 'Joins a specified voice channel ID.',
-        execute: async (message, args) => {
-            const channelId = args[0];
-
-            if (!channelId || !/^\d{17,20}$/.test(channelId)) {
-                console.log("Invalid voice channel ID");
-                return;
-            }
-            
-            const channel = await getChannel(channelId);
-            if (!channel || !channel.isVoice() || !channel.guild) {
-                console.log(`Channel not found or not a voice channel`);
-                return;
-            }
-            
-            const guildId = channel.guild.id;
-            let connection = getVoiceConnection(guildId);
-
-            if (connection?.joinConfig.channelId === channel.id) {
-                console.log(`Already connected to ${channel.name}`);
-                return;
-            }
-            
-            if (connection) {
-                connection.destroy();
-                await delay(500);
-            }
-            
-            try {
-                connection = joinVoiceChannel({
-                    channelId: channel.id,
-                    guildId: guildId,
-                    adapterCreator: channel.guild.voiceAdapterCreator,
-                    selfDeaf: false,
-                    selfMute: false,
-                });
-                botState.voiceConnection = connection;
-                
-                connection.on(VoiceConnectionStatus.Disconnected, async () => {
-                    connection.destroy();
-                });
-                
-                await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
-                console.log(`Joined voice channel ${channel.name}`);
-            } catch (voiceError) {
-                if (connection) connection.destroy();
-                botState.voiceConnection = null;
-                console.log(`Failed to join voice channel`);
-            }
-        }
-    },
-    '.çık': {
-        description: 'Leaves the current voice channel in the server.',
-        execute: async (message) => {
-            if (!message.guild) {
-                console.log("This command only works in servers");
-                return;
-            }
-            
-            const connection = getVoiceConnection(message.guild.id);
-            if (connection) {
-                connection.destroy();
-                console.log(`Left voice channel`);
-            } else {
-                console.log(`Not connected to a voice channel`);
-            }
-        }
-    },
+    // .git komutu kaldırıldı
+    // .çık komutu kaldırıldı
     '.status': {
         description: `Sets Discord presence (${VALID_STATUSES.join(', ')}).`,
         execute: async (message, args) => {
@@ -595,10 +491,6 @@ const commands = {
             📌 \`.setch <id1,id2...>\`: Update farm channel list.
             📌 \`.captcha\`: Toggle OwO solved DM listener.
             
-            **Voice:**
-            📌 \`.git <vc_id>\`: Join a voice channel.
-            📌 \`.çık\`: Leave current voice channel.
-            
             **General:**
             📌 \`.status <online|idle|dnd|invisible>\`: Set presence.
             📌 \`.help\`: Display this message.`;
@@ -624,19 +516,18 @@ async function handleSelfCommand(message) {
     try {
         await command.execute(message, args);
         if (command.deleteCommand !== false) {
-            await delay(getRandomInt(COMMAND_DELETE_DELAY_MIN, COMMAND_DELETE_DELAY_MAX));
+            await delay(getRandomInt(DELAYS.COMMAND_DELETE.MIN, DELAYS.COMMAND_DELETE.MAX));
             await safeDeleteMessage(message);
         }
     } catch (cmdError) {}
 }
 
+// Event Listeners
 client.on('ready', async () => {
     console.log(`Logged in as ${client.user.username}`);
     
     try {
-        await client.user.setPresence({
-            status: DEFAULT_PRESENCE
-        });
+        await client.user.setPresence({ status: DEFAULT_PRESENCE });
     } catch (e) {}
 
     owoLoop();
@@ -660,14 +551,7 @@ client.on('error', error => {
     console.log('Discord Client Error:', error.message);
 });
 
-client.on('voiceStateUpdate', (oldState, newState) => {
-    if (oldState.member?.id === client.user?.id && oldState.channelId && !newState.channelId) {
-        const guildConnection = getVoiceConnection(oldState.guild.id);
-        if (guildConnection && botState.voiceConnection === guildConnection) {
-            botState.voiceConnection = null;
-        }
-    }
-});
+// voiceStateUpdate event listener kaldırıldı
 
 client.login(token).catch(err => {
     console.log(`LOGIN FAILED: ${err.message}`);
@@ -679,10 +563,7 @@ async function shutdown(signal) {
     stopBot(false);
     await clearCaptchaState("Shutdown");
 
-    if (botState.voiceConnection instanceof VoiceConnection && botState.voiceConnection.state.status !== VoiceConnectionStatus.Destroyed) {
-        botState.voiceConnection.destroy();
-        await delay(500);
-    }
+    // Voice connection cleanup kaldırıldı
 
     client.destroy();
     process.exit(0);
