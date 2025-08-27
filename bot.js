@@ -1,58 +1,59 @@
 const axios = require('axios');
-const { Client } = require('discord.js-selfbot-v13');
+const { Client, Intents } = require('discord.js-selfbot-v13');
 const config = require('./config/config.json');
+const { logPre } = require('./modules/logger');
 
-// --- Yapılandırma ---
+// Yapılandırma ve Sabitler
 const token = process.argv[2];
-const {
-    CH_IDS: initialChannelIds = [], // Farm yapılacak kanal ID'leri
-    owo_ID, // OwO botunun kullanıcı ID'si
-    reaction_ID, // Captcha bildirimi yapılacak kullanıcı ID'si
-    webhookUrl, // Bildirim gönderilecek webhook URL'si
-    webhookUrls: configWebhookUrls = [], // Alternatif webhook URL'leri
-    DEFAULT_PRESENCE = 'invisible' // Varsayılan Discord durumu
+const { 
+    CH_IDS: initialChannelIds = [], 
+    owo_ID, 
+    reaction_ID, 
+    webhookUrl, 
+    webhookUrls: configWebhookUrls = [], 
+    DEFAULT_PRESENCE = 'invisible' 
 } = config;
 
-// --- Sabitler ---
 const DELAYS = {
-    TYPING: { MIN: 200, MAX: 1000 }, // Yazıyor efekti gecikmesi (ms)
-    MESSAGE: { MIN: 200, MAX: 500 }, // Mesaj gönderme gecikmesi (ms)
-    OWO: { MIN: 12000, MAX: 13500 }, // OwO komutu aralığı (ms)
-    WHWB: { MIN: 17000, MAX: 18500 }, // Wh/Wb komutu aralığı (ms)
-    SLEEP: { MIN: 30000, MAX: 60000 }, // Rastgele uyku süresi (ms)
-    CHANNEL_CYCLE: { MIN: 600000, MAX: 900000 }, // Kanal değiştirme aralığı (ms)
-    COMMAND_DELETE: { MIN: 300, MAX: 800 }, // Komut mesajını silme gecikmesi (ms)
-    STATUS_MESSAGE_DELETE: 30000, // Durum mesajını silme süresi (ms)
-    INFO_MESSAGE_DELETE: 15000, // Bilgi mesajını silme süresi (ms)
-    CAPTCHA_WEBHOOK_DELETE: 10 * 60 * 1000 // Captcha webhook mesajını silme süresi (ms)
+    TYPING: { MIN: 200, MAX: 1000 },           // Yazma efekti gecikmesi
+    MESSAGE: { MIN: 200, MAX: 500 },           // Mesaj gönderme gecikmesi
+    OWO: { MIN: 11000, MAX: 15000 },           // "Owo" komutu arası gecikme
+    WHWB: { MIN: 16000, MAX: 20000 },          // "Owo h" ve "Owo b" komutları arası gecikme
+    SLEEP: { MIN: 30000, MAX: 60000 },         // Rastgele uyuma gecikmesi
+    CHANNEL_CYCLE: { MIN: 600000, MAX: 900000 }, // Kanal değiştirme aralığı (10-15 dakika)
+    COMMAND_DELETE: { MIN: 300, MAX: 800 },    // Komut mesajlarını silme gecikmesi
+    STATUS_MESSAGE_DELETE: 30000,              // Durum mesajını silme süresi (30 sn)
+    INFO_MESSAGE_DELETE: 15000,                // Bilgi mesajını silme süresi (15 sn)
+    CAPTCHA_WEBHOOK_DELETE: 10 * 60 * 1000     // Captcha webhook mesajını silme süresi (10 dakika)
 };
 
 const PROBABILITIES = {
-    SLEEP: 0.016, // Rastgele uyku ihtimali (%1.6)
-    TYPING: 0.28 // Yazıyor efekti gösterme ihtimali (%28)
+    SLEEP: 0.016,    // Rastgele uyuma olasılığı (~%1.6)
+    TYPING: 0.28     // Yazma efekti gösterme olasılığı (%28)
 };
 
-// Captcha algılaması için anahtar kelimeler
+// Captcha anahtar kelimeleri (küçük harfe çevrilerek kontrol edilir)
 const CAPTCHA_KEYWORDS = ['captcha', 'verify', 'real', 'human?', 'ban', 'banned', 'suspend', 'complete verification'];
-// Geçerli Discord durumları
+const ERROR_WEBHOOK_USERNAME = 'Bot Hatası';
 const VALID_STATUSES = ['online', 'idle', 'dnd', 'invisible'];
 
-// --- Bot Durumu ---
+// Bot Durumu
 let botState = {
-    isRunning: false, // Bot çalışıyor mu?
-    isOwoEnabled: false, // OwO/WhWb gönderimi etkin mi?
-    isSleeping: false, // Bot uyuyor mu?
-    captchaDetected: false, // Captcha algılandı mı?
-    isProcessingOwo: false, // OwO işlemi sürüyor mu?
-    isProcessingWhWb: false, // Wh/Wb işlemi sürüyor mu?
-    isCaptchaDmHandlerEnabled: true, // Captcha DM işleyicisi etkin mi? (Varsayılan: true)
-    currentChannelIndex: 0, // Mevcut kanal indeksi
-    channelIds: [...initialChannelIds], // Farm yapılacak kanal ID'leri
-    captchaWebhookMessages: [], // Gönderilen captcha webhook mesajları
-    captchaWebhookDeleteTimer: null // Captcha webhook silme zamanlayıcısı
+    isRunning: false,                    // Bot çalışıyor mu?
+    isOwoEnabled: false,                 // OwO/WhWb farming aktif mi?
+    isSleeping: false,                   // Bot şu anda uyuyor mu?
+    captchaDetected: false,              // Captcha algılandı mı?
+    isProcessingOwo: false,              // "Owo" döngüsü çalışıyor mu?
+    isProcessingWhWb: false,             // "WhWb" döngüsü çalışıyor mu?
+    isCaptchaDmHandlerEnabled: true,     // Captcha DM dinleyicisi aktif mi?
+    currentChannelIndex: 0,              // Mevcut kanal indeksi
+    channelIds: [...initialChannelIds],  // Farming yapılacak kanal ID'leri
+    // voiceConnection alanı kaldırıldı
+    captchaWebhookMessages: [],          // Webhook ile gönderilen captcha mesajlarının ID'leri (silme için)
+    captchaWebhookDeleteTimer: null      // Captcha mesajlarını otomatik silmek için zamanlayıcı
 };
 
-// --- Doğrulama ---
+// Doğrulama
 if (!token) {
     console.error('Token sağlanmadı!');
     process.exit(1);
@@ -62,73 +63,55 @@ if (!Array.isArray(initialChannelIds) || initialChannelIds.length === 0) {
     process.exit(1);
 }
 
-// Aktif webhook URL'lerini belirle
-let activeWebhookUrls = configWebhookUrls.filter(url => 
-    typeof url === 'string' && url.startsWith('https://discord.com/api/webhooks/')
-);
+let activeWebhookUrls = configWebhookUrls.filter(url => typeof url === 'string' && url.startsWith('https://discord.com/api/webhooks/'));
 if (activeWebhookUrls.length === 0 && typeof webhookUrl === 'string' && webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
     activeWebhookUrls = [webhookUrl];
 }
 
-// --- Yardımcı Fonksiyonlar ---
+// Utility Functions
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getCurrentChannelId = () => botState.channelIds[botState.currentChannelIndex];
-
-// --- Temel Mantık Kontrolü ---
 const shouldRunLoop = (loopType = 'any') => {
-    // Genel koşullar: Bot çalışmıyorsa, uyuyorsa, captcha varsa veya kullanıcı yoksa döngüyü durdur
     if (!botState.isRunning || botState.isSleeping || botState.captchaDetected || !client?.user) return false;
-    // OwO döngüsü için özel koşullar
     if (loopType === 'owo' && (!botState.isOwoEnabled || botState.isProcessingWhWb)) return false;
-    // Wh/Wb döngüsü için özel koşullar
     if (loopType === 'whwb' && (!botState.isOwoEnabled || botState.isProcessingOwo)) return false;
     return true;
 };
-
 const parseWebhookUrl = (url) => {
-    // Webhook URL'sinden ID ve token'ı ayıklar
     const match = url.match(/webhooks\/(\d+)\/([^\/?]+)/);
     return match && match.length === 3 ? { id: match[1], token: match[2] } : null;
 };
 
-// --- Discord Client ---
+// Discord Client
 const client = new Client({
     checkUpdate: false,
     ws: { properties: { $browser: "Discord iOS" } }
 });
 
-// --- Temel Fonksiyonlar ---
+// Core Functions
 async function updateBotStatus() {
     if (!client?.user) return;
 
     let newStatus;
-    if (botState.captchaDetected) {
-        newStatus = 'dnd'; // Captcha varsa: Rahatsız Etmeyin
-    } else if (!botState.isRunning) {
-        newStatus = 'idle'; // Bot durmuşsa: Boşta
-    } else if (botState.isOwoEnabled) {
-        newStatus = 'online'; // Farm aktifse: Çevrimiçi
-    } else {
-        newStatus = DEFAULT_PRESENCE; // Varsayılan durum
-    }
+    if (botState.captchaDetected) newStatus = 'dnd'; // Captcha varsa rahatsız etmeyin
+    else if (!botState.isRunning) newStatus = 'idle'; // Durdurulduysa boşta
+    else if (botState.isOwoEnabled) newStatus = 'online'; // Farming aktifse çevrimiçi
+    else newStatus = DEFAULT_PRESENCE; // Varsayılan durum
 
     try {
         await client.user.setPresence({ status: newStatus });
         console.log(`Durum güncellendi: ${newStatus}`);
     } catch (error) {
-        console.error(`Durum güncellenemedi: ${error.message}`);
+        console.log(`Durum güncellenemedi: ${error.message}`);
     }
 }
 
 async function safeDeleteMessage(message, delayMs = 0) {
     if (!message || typeof message.delete !== 'function') return;
-    const del = () => message.delete().catch(() => {});
-    if (delayMs > 0) {
-        setTimeout(del, delayMs);
-    } else {
-        await del();
-    }
+    const del = () => message.delete().catch(e => {});
+    if (delayMs > 0) setTimeout(del, delayMs);
+    else await del();
 }
 
 async function getChannel(channelId) {
@@ -146,16 +129,13 @@ async function getChannelName(channelId) {
 }
 
 async function sendTyping(channelId) {
-    // Yazıyor efekti gösterme ihtimali
     if (Math.random() >= PROBABILITIES.TYPING) return;
     const channel = await getChannel(channelId);
     if (channel?.isText() && channel.type !== 'GUILD_FORUM') {
         try {
             await channel.sendTyping();
             await delay(getRandomInt(DELAYS.TYPING.MIN, DELAYS.TYPING.MAX));
-        } catch (error) {
-            // Yazıyor efekti hatalarını görmezden gel
-        }
+        } catch (error) {}
     }
 }
 
@@ -178,11 +158,12 @@ async function sendWebhookMessage(content, username, avatarUrl, options = {}) {
 
     const payload = {
         content: content,
-        username: username || 'SelfBot Bildirimi',
+        username: username || 'SelfBot Notifier',
         avatar_url: avatarUrl || client.user?.displayAvatarURL()
     };
 
     const results = [];
+    const webhookPromises = [];
 
     for (const webhookUrl of activeWebhookUrls) {
         let targetUrl = webhookUrl;
@@ -191,16 +172,15 @@ async function sendWebhookMessage(content, username, avatarUrl, options = {}) {
         if (!webhookInfo) continue;
 
         if (options.wait) {
-            targetUrl += (targetUrl.includes('?') ? '&wait=true' : '?wait=true');
+            targetUrl += targetUrl.includes('?') ? '&wait=true' : '?wait=true';
         } else {
             targetUrl = targetUrl.replace(/[?&]wait=true/, '');
         }
 
-        try {
-            const response = await axios.post(targetUrl, payload, {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 15000
-            });
+        const promise = axios.post(targetUrl, payload, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 15000
+        }).then(response => {
             if (options.wait && response.data?.id) {
                 results.push({
                     messageId: response.data.id,
@@ -208,15 +188,15 @@ async function sendWebhookMessage(content, username, avatarUrl, options = {}) {
                     webhookToken: webhookInfo.token
                 });
             }
-        } catch (err) {
-            // Webhook hatalarını görmezden gel
-        }
+        }).catch(err => {});
+        webhookPromises.push(promise);
     }
 
+    await Promise.allSettled(webhookPromises);
     return results;
 }
 
-async function deleteWebhookMessage(messageId, webhookId, webhookToken, reason = "Doğrulama") {
+async function deleteWebhookMessage(messageId, webhookId, webhookToken, reason = "Verification") {
     if (!messageId || !webhookId || !webhookToken) return false;
 
     const deleteUrl = `https://discord.com/api/v9/webhooks/${webhookId}/${webhookToken}/messages/${messageId}`;
@@ -225,7 +205,6 @@ async function deleteWebhookMessage(messageId, webhookId, webhookToken, reason =
         await axios.delete(deleteUrl, { timeout: 10000 });
         return true;
     } catch (deleteError) {
-        // Mesaj bulunamazsa silindi kabul et (404)
         return deleteError.response?.status === 404;
     }
 }
@@ -238,31 +217,21 @@ function stopBot(log = true) {
     }
 }
 
-async function resumeBot({ skipCaptchaCheck = false } = {}) {
-    // Eğer .captcha işleyicisi devre dışıysa, captcha kontrolünü her zaman atla
-    const effectiveSkipCaptchaCheck = skipCaptchaCheck || !botState.isCaptchaDmHandlerEnabled;
-
-    if (!effectiveSkipCaptchaCheck && botState.captchaDetected) {
-        console.log("Devam edilemiyor: Captcha aktif (ve .captcha işleyicisi etkin)");
+async function resumeBot() {
+    if (botState.captchaDetected) {
+        console.log("Devam edilemiyor: Captcha aktif");
         return;
     }
-    
-    // Eğer işleyici devre dışıysa, devam ederken kalan captcha durumunu temizle
-    if (!botState.isCaptchaDmHandlerEnabled && botState.captchaDetected) {
-         console.log("Captcha işleyicisi devre dışı. Devam ederken captcha durumu temizleniyor.");
-         await clearCaptchaState("Captcha işleyicisi devre dışıyken devam edildi");
-    }
-
     if (!botState.isRunning) {
         botState.isRunning = true;
-        console.log("Bot devam etti");
+        console.log("Bot yeniden başlatıldı");
         await updateBotStatus();
     }
 }
 
 function toggleBooleanState(stateKey, name) {
     botState[stateKey] = !botState[stateKey];
-    console.log(`${name}: ${botState[stateKey] ? 'Etkin' : 'Devre Dışı'}`);
+    console.log(`${name}: ${botState[stateKey] ? 'Etkin' : 'Devre dışı'}`);
     updateBotStatus();
 }
 
@@ -288,42 +257,40 @@ async function clearCaptchaState(reason = "Doğrulama") {
 
 async function notifyCaptcha() {
     console.log(`CAPTCHA ALGILANDI: ${client.user?.username || 'Bilinmeyen'}`);
-    stopBot(false); // Captcha geldiğinde botu duraklat
+    stopBot(false);
 
-    await clearCaptchaState("Yeni Captcha Algılandı");
+    await clearCaptchaState("Yeni Captcha Tetiklendi");
     botState.captchaDetected = true;
     await updateBotStatus();
     
     const captchaWebhookUsername = `${client.user?.displayName || 'Bilinmeyen Kullanıcı'}`;
     const captchaWebhookAvatar = client.user?.displayAvatarURL({ dynamic: true, format: "png" });
-    // Not: Görünmez karakterlerin uzun kısmı kısaltıldı
-    const captchaMsg = `Captcha! <@&1402022346675720303> <@&1402022568730558615>`; 
+    // Uzun boşluk karakterleriyle spam mesajı (Discord bildirimi için)
+    const captchaMsg = `[Captcha!](https://www.owobot.com/captcha) ||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​|| <@&1402022346675720303> <@&1402022568730558615>`;
 
     const messageInfos = await sendWebhookMessage(captchaMsg, captchaWebhookUsername, captchaWebhookAvatar, { wait: true });
 
     if (messageInfos.length > 0) {
         botState.captchaWebhookMessages = messageInfos;
         botState.captchaWebhookDeleteTimer = setTimeout(() => {
-            clearCaptchaState("Zaman Aşımı");
+            clearCaptchaState("Zaman aşımı");
         }, DELAYS.CAPTCHA_WEBHOOK_DELETE);
     }
 
     if (reaction_ID) {
         try {
             const userToDm = await client.users.fetch(reaction_ID);
-            await userToDm.send(`## ** Captcha **\n> -# [**Çözmek için buraya tıklayın**](https://owobot.com/captcha)`);
+            await userToDm.send(`## ** Captcha **
+> -# [**Çözmek için tıkla**](https://owobot.com/captcha)`);
             const sentMessage = await userToDm.send("!r cat");
             setTimeout(() => {
-                safeDeleteMessage(sentMessage).catch(() => {});
+                sentMessage.delete().catch(console.error);
             }, 3000);
-        } catch (dmError) {
-            console.error("Captcha DM gönderilemedi:", dmError.message);
-        }
+        } catch (dmError) {}
     }
 }
 
 async function handleIncomingMessage(message) {
-    // Sadece OwO'dan gelen ve bizi etiketleyen mesajları işle
     if (message.author.id !== owo_ID || botState.captchaDetected) return;
     if (message.channel.type === 'DM' || !message.content.includes(`<@${client.user.id}>`)) return;
 
@@ -334,19 +301,15 @@ async function handleIncomingMessage(message) {
 }
 
 async function handleCaptchaDM(message) {
-    // Sadece işleyici açıkken ve OwO'dan DM gelmişse işle
-    if (!botState.isCaptchaDmHandlerEnabled || message.channel.type !== 'DM' || message.author.id !== owo_ID) {
-        return;
-    }
+    if (!botState.isCaptchaDmHandlerEnabled || message.channel.type !== 'DM' || message.author.id !== owo_ID) return;
 
     const isVerified = message.content.includes('verified that you are human') || message.content.includes('Thank you for verifying');
     if (isVerified) {
         console.log(`CAPTCHA DOĞRULANDI: ${client.user?.username}`);
-        await clearCaptchaState("DM ile doğrulama alındı");
+        await clearCaptchaState("Doğrulama alındı");
         await delay(getRandomInt(10000, 20000));
-        // Doğrulama alındıktan sonra botu devam ettir
         if (!botState.isRunning) {
-            await resumeBot({ skipCaptchaCheck: true }); // Kontrolü atla çünkü yeni temizledik
+            await resumeBot();
         }
     }
 }
@@ -355,9 +318,9 @@ async function randomSleep() {
     if (shouldRunLoop() && Math.random() < PROBABILITIES.SLEEP) {
         botState.isSleeping = true;
         const sleepDuration = getRandomInt(DELAYS.SLEEP.MIN, DELAYS.SLEEP.MAX);
-        console.log(`Uyuyor: ${Math.round(sleepDuration / 1000)}s`);
+        console.log(`${Math.round(sleepDuration / 1000)} saniye uyuyor...`);
         await delay(sleepDuration);
-        console.log("Uyandı");
+        console.log("Uyanıldı");
         botState.isSleeping = false;
     }
 }
@@ -374,7 +337,6 @@ async function owoLoop() {
             await sendMessage(channelId, "Owo");
             await randomSleep();
         } catch (error) {
-            console.error("owoLoop hatası:", error.message);
             await delay(5000);
         } finally {
             botState.isProcessingOwo = false;
@@ -399,7 +361,6 @@ async function whwbLoop() {
             }
             await randomSleep();
         } catch (error) {
-            console.error("whwbLoop hatası:", error.message);
             await delay(5000);
         } finally {
             botState.isProcessingWhWb = false;
@@ -410,142 +371,142 @@ async function whwbLoop() {
 
 async function cycleChannels() {
     if (botState.channelIds.length <= 1) return;
-    console.log(`Kanal döngüsü etkin (${botState.channelIds.length} kanal)`);
+    console.log(`Channel cycling enabled (${botState.channelIds.length} channels)`);
 
     while (true) {
         await delay(getRandomInt(DELAYS.CHANNEL_CYCLE.MIN, DELAYS.CHANNEL_CYCLE.MAX));
         if (shouldRunLoop() && botState.channelIds.length > 1) {
             botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
             const nextChannelId = getCurrentChannelId();
-            console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)}`);
+            console.log(`Channel cycled to: #${await getChannelName(nextChannelId)}`);
         }
         if (!client?.user) return;
     }
 }
 
-// --- Komutlar ---
+// Command Definitions
 const commands = {
     '.capx': {
-        description: 'Captcha algılamasını simüle eder.',
-        execute: async () => {
-            await notifyCaptcha(); // Mevcut fonksiyonu yeniden kullan
-        }
+        description: 'Toggles the OwO/WhWb message loop.',
+        execute: () => captchaDetected('captcha detect', 'OwO Farming')
     },
-    '.69': {
-        description: 'OwO/WhWb mesaj döngüsünü açar/kapatır.',
-        execute: () => toggleBooleanState('isOwoEnabled', 'OwO Farmı')
+    '.start': {
+        description: 'Toggles the OwO/WhWb message loop.',
+        execute: () => toggleBooleanState('isOwoEnabled', 'OwO Farming')
     },
     '.on': {
-        description: 'Mesaj gönderimini başlatır. Eğer .captcha işleyicisi devre dışıysa, captcha durumunu temizler.',
+        description: 'Resumes sending messages.',
         execute: async () => {
-             // İşleyici durumuna göre captcha kontrolünü atla
-            await resumeBot({ skipCaptchaCheck: !botState.isCaptchaDmHandlerEnabled }); 
+            // Eğer captcha aktifse ve DM handler kapalıysa, captcha'yı manuel olarak temizle
+            if (botState.captchaDetected && !botState.isCaptchaDmHandlerEnabled) {
+                console.log("Captcha detected but DM handler is off. Clearing captcha state manually.");
+                await clearCaptchaState("Manual resume via .on command");
+            }
+            await resumeBot();
         }
     },
     '.off': {
-        description: 'Mesaj gönderimini duraklatır.',
-        execute: () => stopBot()
+        description: 'Pauses sending messages.',
+        execute: () => { stopBot(); }
     },
     '.next': {
-        description: 'Manuel olarak bir sonraki kanala geçer.',
+        description: 'Manually cycles to the next channel.',
         execute: async () => {
             if (botState.channelIds.length > 1) {
                 botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
                 const nextChannelId = getCurrentChannelId();
-                console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)}`);
+                console.log(`Cycled channel to: #${await getChannelName(nextChannelId)}`);
             } else {
-                console.log("Sadece bir kanal yapılandırıldı");
+                console.log("Only one channel configured");
             }
         }
     },
     '.captcha': {
-        description: 'OwO captcha çözüldü DM işleyicisini açar/kapatır. Devre dışı bırakıldığında, .on captcha durumunu temizler.',
-        execute: () => toggleBooleanState('isCaptchaDmHandlerEnabled', 'Captcha DM İşleyicisi')
+        description: 'Toggles the OwO captcha solved DM handler.',
+        execute: () => toggleBooleanState('isCaptchaDmHandlerEnabled', 'Captcha DM Handler')
     },
-    '.fstatus': null, // Takma ad
+    '.fstatus': null,
     '.farmstatus': {
-        description: 'Mevcut farm durumunu gösterir.',
+        description: 'Shows the current farming status.',
         execute: async (message) => {
             const currentChannelId = getCurrentChannelId();
             const currentChannelName = await getChannelName(currentChannelId);
-            const boolToCheck = (val) => val ? '✅ Evet' : '❌ Hayır';
-            const enabledDisabled = (val) => val ? '✅ Etkin' : '❌ Devre Dışı';
+            const boolToCheck = (val) => val ? '✅ Yes' : '❌ No';
+            const enabledDisabled = (val) => val ? '✅ Enabled' : '❌ Disabled';
+            const trackedWebhookCount = botState.captchaWebhookMessages.length;
 
-            const statusMessage = `\`\`\`
-Bot Farm Durumu (${client.user.username}):
+            const statusMessage = `
+\`\`\`
+Bot Farm Status (${client.user.username}):
 ---------------------------------
-Çalışıyor        : ${boolToCheck(botState.isRunning)}
-Uyuyor           : ${botState.isSleeping ? '💤 Evet' : '❌ Hayır'}
-Captcha Aktif    : ${botState.captchaDetected ? '🚨 EVET' : '✅ Hayır'}
+Running        : ${boolToCheck(botState.isRunning)}
+Sleeping       : ${botState.isSleeping ? '💤 Yes' : '❌ No'}
+Captcha Active : ${botState.captchaDetected ? '🚨 YES' : '✅ No'}
 
-OwO Gönderimi    : ${enabledDisabled(botState.isOwoEnabled)}
-Captcha İşleyici : ${enabledDisabled(botState.isCaptchaDmHandlerEnabled)}
+OwO Sending    : ${enabledDisabled(botState.isOwoEnabled)}
 
-Mevcut Kanal     : #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
-\`\`\``;
-            message.channel.send(statusMessage)
-                .then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE))
-                .catch(() => {});
+Current Channel: #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
+\`\`\`
+            `;
+            message.channel.send(statusMessage).then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE));
         }
     },
     '.setch': {
-        description: 'Farm yapılacak kanal ID\'lerini günceller (virgülle ayrılmış).',
+        description: 'Updates the farming channel IDs (comma-separated).',
         execute: async (message, args) => {
-            const newChIds = args.join('').split(',')
-                .map(id => id.trim())
-                .filter(id => /^\d{17,20}$/.test(id));
+            const newChIds = args.join('').split(',').map(id => id.trim()).filter(id => /^\d{17,20}$/.test(id));
 
             if (newChIds.length > 0) {
                 stopBot(false);
                 botState.channelIds = newChIds;
                 botState.currentChannelIndex = 0;
-                console.log(`Kanallar güncellendi: [${botState.channelIds.join(', ')}]`);
-                await resumeBot(); // Kanal güncellemesinden sonra devam et
+                console.log(`Channels updated: [${botState.channelIds.join(', ')}]`);
+                await resumeBot();
             } else {
-                console.log(`Geçersiz format/ID\'ler! Kullanım: .setch ID1,ID2,...`);
+                console.log(`Invalid format/IDs! Use: !setch ID1,ID2,...`);
             }
         }
     },
+    // .git komutu kaldırıldı
+    // .çık komutu kaldırıldı
     '.status': {
-        description: `Discord durumunu ayarlar (${VALID_STATUSES.join(', ')}).`,
+        description: `Sets Discord presence (${VALID_STATUSES.join(', ')}).`,
         execute: async (message, args) => {
             const status = args[0]?.toLowerCase();
 
             if (VALID_STATUSES.includes(status)) {
                 try {
                     await client.user.setPresence({ status });
-                    console.log(`Durum ayarlandı: ${status}`);
+                    console.log(`Presence set to ${status}`);
                 } catch (e) {
-                    console.error(`Durum ayarlanamadı: ${e.message}`);
+                    console.log(`Failed to set presence`);
                 }
             } else {
-                console.log(`Geçersiz durum. Kullanım: ${VALID_STATUSES.join(', ')}`);
+                console.log(`Invalid status. Use: ${VALID_STATUSES.join(', ')}`);
             }
         }
     },
     '.help': {
-        description: 'Bu yardım mesajını gösterir.',
+        description: 'Shows this help message.',
         execute: async (message) => {
-            const helpMessage = `**Self-Bot Komutları**
-*Dikkatli kullanın. Önek kurulumunuza göre değişebilir.*
+            const helpMessage = `
+**Self-Bot Commands**
+*Use cautiously. Prefix may vary based on your setup.*
 
-**Farm:**
-📌 \`.on\` / \`.off\`: Mesaj döngülerini başlat/durdur.
-📌 \`.69\`: OwO/WhWb döngüsünü aç/kapat.
-📌 \`.farmstatus\` / \`.fstatus\`: Mevcut durumu göster.
-📌 \`.next\`: Manuel kanal değiştir.
-📌 \`.setch <id1,id2...>\`: Farm kanallarını güncelle.
-📌 \`.captcha\`: OwO DM dinleyicisini aç/kapat. Devre dışıysa, .on captcha durumunu temizler.
+**Farming:**
+    📌 \`.on\` / \`.off\`: Resume/pause message loops.
+    📌 \`.start\`: Toggle OwO/WhWb loop.
+    📌 \`.farmstatus\` / \`.fstatus\`: Show current status.
+    📌 \`.next\`: Manually cycle farm channel.
+    📌 \`.setch <id1,id2...>\`: Update farm channel list.
+    📌 \`.captcha\`: Toggle OwO solved DM listener.
 
-**Genel:**
-📌 \`.status <online|idle|dnd|invisible>\`: Durumu ayarla.
-📌 \`.help\`: Bu mesajı göster.
-📌 \`.capx\`: Captcha algılamasını simüle et.`;
+    **General:**
+    📌 \`.status <online|idle|dnd|invisible>\`: Set presence.
+    📌 \`.help\`: Display this message.`;
             try {
                 await message.channel.send(helpMessage);
-            } catch (helpErr) {
-                console.error("Yardım mesajı gönderilemedi:", helpErr.message);
-            }
+            } catch (helpErr) {}
         },
         deleteCommand: false
     }
@@ -568,20 +529,16 @@ async function handleSelfCommand(message) {
             await delay(getRandomInt(DELAYS.COMMAND_DELETE.MIN, DELAYS.COMMAND_DELETE.MAX));
             await safeDeleteMessage(message);
         }
-    } catch (cmdError) {
-        console.error(`Komut çalıştırma hatası ${commandName}:`, cmdError.message);
-    }
+    } catch (cmdError) {}
 }
 
-// --- Olay Dinleyicileri ---
+// Event Listeners
 client.on('ready', async () => {
-    console.log(`Giriş yapıldı: ${client.user.username}`);
+    console.log(`Logged in as ${client.user.username}`);
     
     try {
         await client.user.setPresence({ status: DEFAULT_PRESENCE });
-    } catch (e) {
-        console.error("İlk durum ayarlanamadı:", e.message);
-    }
+    } catch (e) {}
 
     owoLoop();
     whwbLoop();
@@ -590,7 +547,7 @@ client.on('ready', async () => {
     if (!botState.captchaDetected) {
         await resumeBot();
     } else {
-        console.log("Başlangıçta captcha algılandı. Bot duraklatıldı.");
+        console.log("Captcha detected. Bot remains paused.");
     }
 });
 
@@ -601,18 +558,22 @@ client.on('messageCreate', async message => {
 });
 
 client.on('error', error => {
-    console.error('Discord Client Hatası:', error.message);
+    console.log('Discord Client Error:', error.message);
 });
 
+// voiceStateUpdate event listener kaldırıldı
+
 client.login(token).catch(err => {
-    console.error(`GİRİŞ BAŞARISIZ: ${err.message}`);
+    console.log(`LOGIN FAILED: ${err.message}`);
     process.exit(1);
 });
 
 async function shutdown(signal) {
-    console.log(`Kapatılıyor...`);
+    console.log(`Shutting down...`);
     stopBot(false);
-    await clearCaptchaState("Kapatma");
+    await clearCaptchaState("Shutdown");
+
+    // Voice connection cleanup kaldırıldı
 
     client.destroy();
     process.exit(0);
@@ -622,12 +583,11 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 process.on('uncaughtException', async (error) => {
-    console.error(`YAKALANMAMIŞ İSTİSNA: ${error.message}`);
-    console.error(error.stack);
+    console.log(`UNCAUGHT EXCEPTION: ${error.message}`);
     stopBot(false);
 });
 
-process.on('unhandledRejection', async (reason, promise) => {
-    console.error('YAKALANMAMIŞ PROMISE REDDİ:', reason);
+process.on('unhandledRejection', async (reason) => {
+    console.log('UNHANDLED PROMISE REJECTION:', reason);
     stopBot(false);
 });
