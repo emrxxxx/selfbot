@@ -12,7 +12,7 @@ jobs:
       CH_IDS: ${{ secrets.CH_IDS }}
       WEBHOOK1: ${{ secrets.WEBHOOK1 }}
       WEBHOOK2: ${{ secrets.WEBHOOK2 }}
-      DEFAULT_PRESENCE: ${{ secrets.DEFAULT_PRESENCE }}
+      # DEFAULT_PRESENCE: ${{ secrets.DEFAULT_PRESENCE }}
 
     steps:
       - name: Checkout repo
@@ -44,11 +44,12 @@ jobs:
         run: |
           node launcher.js &
           BOT_PID=$!
-          sleep 21600   # 6 saat
+          sleep 21600  # 6 saat
           kill $BOT_PID || true
 
       - name: Trigger next run
         run: |
-          gh workflow run "Run Discord Bot (6h loop)"
+          gh workflow run "Run Discord Bot (6h loop)" --ref ${{ github.ref_name }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT_TOKEN is the secret containing your Personal Access Token
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
