@@ -371,14 +371,14 @@ async function whwbLoop() {
 
 async function cycleChannels() {
     if (botState.channelIds.length <= 1) return;
-    console.log(`Channel cycling enabled (${botState.channelIds.length} channels)`);
+    console.log(`Kanal döngüsü etkin (${botState.channelIds.length} kanal)`);
 
     while (true) {
         await delay(getRandomInt(DELAYS.CHANNEL_CYCLE.MIN, DELAYS.CHANNEL_CYCLE.MAX));
         if (shouldRunLoop() && botState.channelIds.length > 1) {
             botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
             const nextChannelId = getCurrentChannelId();
-            console.log(`Channel cycled to: #${await getChannelName(nextChannelId)}`);
+            console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)}`);
         }
         if (!client?.user) return;
     }
@@ -387,72 +387,72 @@ async function cycleChannels() {
 // Command Definitions
 const commands = {
     '.capx': {
-        description: 'Toggles the OwO/WhWb message loop.',
+        description: 'OwO/WhWb mesaj döngüsünü açar/kapatır.',
         execute: () => captchaDetected('captcha detect', 'OwO Farming')
     },
     '.start': {
-        description: 'Toggles the OwO/WhWb message loop.',
+        description: 'OwO/WhWb mesaj döngüsünü açar/kapatır.',
         execute: () => toggleBooleanState('isOwoEnabled', 'OwO Farming')
     },
     '.on': {
-        description: 'Resumes sending messages.',
+        description: 'Mesaj göndermeyi devam ettirir.',
         execute: async () => {
             // Eğer captcha aktifse ve DM handler kapalıysa, captcha'yı manuel olarak temizle
             if (botState.captchaDetected && !botState.isCaptchaDmHandlerEnabled) {
-                console.log("Captcha detected but DM handler is off. Clearing captcha state manually.");
-                await clearCaptchaState("Manual resume via .on command");
+                console.log("Captcha algılandı ancak DM işleyicisi kapalı. Captcha durumu manuel olarak temizleniyor.");
+                await clearCaptchaState("Manuel başlatma .on komutu ile");
             }
             await resumeBot();
         }
     },
     '.off': {
-        description: 'Pauses sending messages.',
+        description: 'Mesaj göndermeyi duraklatır.',
         execute: () => { stopBot(); }
     },
     '.next': {
-        description: 'Manually cycles to the next channel.',
+        description: 'Manuel olarak bir sonraki kanala geçer.',
         execute: async () => {
             if (botState.channelIds.length > 1) {
                 botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
                 const nextChannelId = getCurrentChannelId();
-                console.log(`Cycled channel to: #${await getChannelName(nextChannelId)}`);
+                console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)}`);
             } else {
-                console.log("Only one channel configured");
+                console.log("Sadece bir kanal yapılandırılmış");
             }
         }
     },
     '.captcha': {
-        description: 'Toggles the OwO captcha solved DM handler.',
+        description: 'OwO captcha çözüldü DM işleyicisini açar/kapatır.',
         execute: () => toggleBooleanState('isCaptchaDmHandlerEnabled', 'Captcha DM Handler')
     },
     '.fstatus': null,
     '.farmstatus': {
-        description: 'Shows the current farming status.',
+        description: 'Mevcut farming durumunu gösterir.',
         execute: async (message) => {
             const currentChannelId = getCurrentChannelId();
             const currentChannelName = await getChannelName(currentChannelId);
-            const boolToCheck = (val) => val ? '✅ Yes' : '❌ No';
-            const enabledDisabled = (val) => val ? '✅ Enabled' : '❌ Disabled';
+            const boolToCheck = (val) => val ? '✅ Evet' : '❌ Hayır';
+            const enabledDisabled = (val) => val ? '✅ Etkin' : '❌ Devre dışı';
             const trackedWebhookCount = botState.captchaWebhookMessages.length;
 
             const statusMessage = `
 \`\`\`
-Bot Farm Status (${client.user.username}):
+Bot Farm Durumu (${client.user.username}):
 ---------------------------------
-Running        : ${boolToCheck(botState.isRunning)}
-Sleeping       : ${botState.isSleeping ? '💤 Yes' : '❌ No'}
-Captcha Active : ${botState.captchaDetected ? '🚨 YES' : '✅ No'}
+Çalışıyor        : ${boolToCheck(botState.isRunning)}
+Uyuyor       : ${botState.isSleeping ? '💤 Evet' : '❌ Hayır'}
+Captcha Aktif : ${botState.captchaDetected ? '🚨 EVET' : '✅ Hayır'}
 
-OwO Sending    : ${enabledDisabled(botState.isOwoEnabled)}
+OwO Gönderiyor    : ${enabledDisabled(botState.isOwoEnabled)}
 
-Current Channel: #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
+Şu Anki Kanal: #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
 \`\`\`
             `;
             message.channel.send(statusMessage).then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE));
         }
     },
     '.setch': {
-        description: 'Updates the farming channel IDs (comma-separated).',
+        description: 'Farming kanal ID\'lerini günceller (virgülle ayrılmış).',
         execute: async (message, args) => {
             const newChIds = args.join('').split(',').map(id => id.trim()).filter(id => /^\d{17,20}$/.test(id));
 
@@ -460,50 +460,50 @@ Current Channel: #${currentChannelName} (${currentChannelId}) [${botState.curren
                 stopBot(false);
                 botState.channelIds = newChIds;
                 botState.currentChannelIndex = 0;
-                console.log(`Channels updated: [${botState.channelIds.join(', ')}]`);
+                console.log(`Kanallar güncellendi: [${botState.channelIds.join(', ')}]`);
                 await resumeBot();
             } else {
-                console.log(`Invalid format/IDs! Use: !setch ID1,ID2,...`);
+                console.log(`Geçersiz format/ID\'ler! Kullanım: !setch ID1,ID2,...`);
             }
         }
     },
     // .git komutu kaldırıldı
     // .çık komutu kaldırıldı
     '.status': {
-        description: `Sets Discord presence (${VALID_STATUSES.join(', ')}).`,
+        description: `Discord durumunu ayarlar (${VALID_STATUSES.join(', ')}).`,
         execute: async (message, args) => {
             const status = args[0]?.toLowerCase();
 
             if (VALID_STATUSES.includes(status)) {
                 try {
                     await client.user.setPresence({ status });
-                    console.log(`Presence set to ${status}`);
+                    console.log(`Durum ${status} olarak ayarlandı`);
                 } catch (e) {
-                    console.log(`Failed to set presence`);
+                    console.log(`Durum ayarlanamadı`);
                 }
             } else {
-                console.log(`Invalid status. Use: ${VALID_STATUSES.join(', ')}`);
+                console.log(`Geçersiz durum. Kullanın: ${VALID_STATUSES.join(', ')}`);
             }
         }
     },
     '.help': {
-        description: 'Shows this help message.',
+        description: 'Bu yardım mesajını gösterir.',
         execute: async (message) => {
             const helpMessage = `
-**Self-Bot Commands**
-*Use cautiously. Prefix may vary based on your setup.*
+**Self-Bot Komutları**
+*Dikkatli kullanın. Önek kurulumunuza göre değişebilir.*
 
 **Farming:**
-    📌 \`.on\` / \`.off\`: Resume/pause message loops.
-    📌 \`.start\`: Toggle OwO/WhWb loop.
-    📌 \`.farmstatus\` / \`.fstatus\`: Show current status.
-    📌 \`.next\`: Manually cycle farm channel.
-    📌 \`.setch <id1,id2...>\`: Update farm channel list.
-    📌 \`.captcha\`: Toggle OwO solved DM listener.
+    📌 \`.on\` / \`.off\`: Mesaj döngülerini devam ettir/duraklat.
+    📌 \`.start\`: OwO/WhWb döngüsünü aç/kapat.
+    📌 \`.farmstatus\` / \`.fstatus\`: Mevcut durumu göster.
+    📌 \`.next\`: Manuel olarak farm kanalını değiştir.
+    📌 \`.setch <id1,id2...>\`: Farm kanal listesini güncelle.
+    📌 \`.captcha\`: OwO çözüldü DM dinleyicisini aç/kapat.
 
-    **General:**
-    📌 \`.status <online|idle|dnd|invisible>\`: Set presence.
-    📌 \`.help\`: Display this message.`;
+    **Genel:**
+    📌 \`.status <online|idle|dnd|invisible>\`: Durumu ayarla.
+    📌 \`.help\`: Bu mesajı göster.`;
             try {
                 await message.channel.send(helpMessage);
             } catch (helpErr) {}
@@ -534,7 +534,7 @@ async function handleSelfCommand(message) {
 
 // Event Listeners
 client.on('ready', async () => {
-    console.log(`Logged in as ${client.user.username}`);
+    console.log(`${client.user.username} olarak giriş yapıldı`);
     
     try {
         await client.user.setPresence({ status: DEFAULT_PRESENCE });
@@ -547,7 +547,7 @@ client.on('ready', async () => {
     if (!botState.captchaDetected) {
         await resumeBot();
     } else {
-        console.log("Captcha detected. Bot remains paused.");
+        console.log("Captcha algılandı. Bot duraklatılmış durumda.");
     }
 });
 
@@ -558,18 +558,18 @@ client.on('messageCreate', async message => {
 });
 
 client.on('error', error => {
-    console.log('Discord Client Error:', error.message);
+    console.log('Discord Client Hatası:', error.message);
 });
 
 // voiceStateUpdate event listener kaldırıldı
 
 client.login(token).catch(err => {
-    console.log(`LOGIN FAILED: ${err.message}`);
+    console.log(`GİRİŞ BAŞARISIZ: ${err.message}`);
     process.exit(1);
 });
 
 async function shutdown(signal) {
-    console.log(`Shutting down...`);
+    console.log(`Kapatılıyor...`);
     stopBot(false);
     await clearCaptchaState("Shutdown");
 
@@ -583,11 +583,11 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 process.on('uncaughtException', async (error) => {
-    console.log(`UNCAUGHT EXCEPTION: ${error.message}`);
+    console.log(`YAKALANMAMIŞ İSTİSNA: ${error.message}`);
     stopBot(false);
 });
 
 process.on('unhandledRejection', async (reason) => {
-    console.log('UNHANDLED PROMISE REJECTION:', reason);
+    console.log('İŞLENMEMIŞ PROMISE RED:', reason);
     stopBot(false);
 });
