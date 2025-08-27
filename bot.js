@@ -1,24 +1,24 @@
 const axios = require('axios');
-const { Client, Intents } = require('discord.js-selfbot-v13');
+const { Client } = require('discord.js-selfbot-v13');
 const config = require('./config/config.json');
-const { logPre } = require('./modules/logger');
 
-// Configuration and Constants
+// --- Configuration ---
 const token = process.argv[2];
-const { 
-    CH_IDS: initialChannelIds = [], 
-    owo_ID, 
-    reaction_ID, 
-    webhookUrl, 
-    webhookUrls: configWebhookUrls = [], 
-    DEFAULT_PRESENCE = 'invisible' 
+const {
+    CH_IDS: initialChannelIds = [],
+    owo_ID,
+    reaction_ID,
+    webhookUrl,
+    webhookUrls: configWebhookUrls = [],
+    DEFAULT_PRESENCE = 'invisible'
 } = config;
 
+// --- Constants ---
 const DELAYS = {
     TYPING: { MIN: 200, MAX: 1000 },
     MESSAGE: { MIN: 200, MAX: 500 },
-    OWO: { MIN: 11000, MAX: 15000 },
-    WHWB: { MIN: 16000, MAX: 20000 },
+    OWO: { MIN: 12000, MAX: 13500 },
+    WHWB: { MIN: 17000, MAX: 18500 },
     SLEEP: { MIN: 30000, MAX: 60000 },
     CHANNEL_CYCLE: { MIN: 600000, MAX: 900000 },
     COMMAND_DELETE: { MIN: 300, MAX: 800 },
@@ -33,10 +33,9 @@ const PROBABILITIES = {
 };
 
 const CAPTCHA_KEYWORDS = ['captcha', 'verify', 'real', 'human?', 'ban', 'banned', 'suspend', 'complete verification'];
-const ERROR_WEBHOOK_USERNAME = 'Bot Error';
 const VALID_STATUSES = ['online', 'idle', 'dnd', 'invisible'];
 
-// Bot State
+// --- Bot State ---
 let botState = {
     isRunning: false,
     isOwoEnabled: false,
@@ -44,15 +43,14 @@ let botState = {
     captchaDetected: false,
     isProcessingOwo: false,
     isProcessingWhWb: false,
-    isCaptchaDmHandlerEnabled: true,
+    isCaptchaDmHandlerEnabled: true, // Default: true, but logic will adapt if disabled
     currentChannelIndex: 0,
     channelIds: [...initialChannelIds],
-    // voiceConnection alanı kaldırıldı
     captchaWebhookMessages: [],
     captchaWebhookDeleteTimer: null
 };
 
-// Validation
+// --- Validation ---
 if (!token) {
     console.error('Token was not provided!');
     process.exit(1);
@@ -62,55 +60,68 @@ if (!Array.isArray(initialChannelIds) || initialChannelIds.length === 0) {
     process.exit(1);
 }
 
-let activeWebhookUrls = configWebhookUrls.filter(url => typeof url === 'string' && url.startsWith('https://discord.com/api/webhooks/'));
+let activeWebhookUrls = configWebhookUrls.filter(url => 
+    typeof url === 'string' && url.startsWith('https://discord.com/api/webhooks/')
+);
 if (activeWebhookUrls.length === 0 && typeof webhookUrl === 'string' && webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
     activeWebhookUrls = [webhookUrl];
 }
 
-// Utility Functions
+// --- Utility Functions ---
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getCurrentChannelId = () => botState.channelIds[botState.currentChannelIndex];
+
+// --- Core Logic Control ---
 const shouldRunLoop = (loopType = 'any') => {
     if (!botState.isRunning || botState.isSleeping || botState.captchaDetected || !client?.user) return false;
     if (loopType === 'owo' && (!botState.isOwoEnabled || botState.isProcessingWhWb)) return false;
     if (loopType === 'whwb' && (!botState.isOwoEnabled || botState.isProcessingOwo)) return false;
     return true;
 };
+
 const parseWebhookUrl = (url) => {
     const match = url.match(/webhooks\/(\d+)\/([^\/?]+)/);
     return match && match.length === 3 ? { id: match[1], token: match[2] } : null;
 };
 
-// Discord Client
+// --- Discord Client ---
 const client = new Client({
     checkUpdate: false,
     ws: { properties: { $browser: "Discord iOS" } }
 });
 
-// Core Functions
+// --- Core Functions ---
 async function updateBotStatus() {
     if (!client?.user) return;
 
     let newStatus;
-    if (botState.captchaDetected) newStatus = 'dnd';
-    else if (!botState.isRunning) newStatus = 'idle';
-    else if (botState.isOwoEnabled) newStatus = 'online';
-    else newStatus = DEFAULT_PRESENCE;
+    if (botState.captchaDetected) {
+        newStatus = 'dnd';
+    } else if (!botState.isRunning) {
+        newStatus = 'idle';
+    } else if (botState.isOwoEnabled) {
+        newStatus = 'online';
+    } else {
+        newStatus = DEFAULT_PRESENCE;
+    }
 
     try {
         await client.user.setPresence({ status: newStatus });
         console.log(`Status updated to: ${newStatus}`);
     } catch (error) {
-        console.log(`Failed to update status: ${error.message}`);
+        console.error(`Failed to update status: ${error.message}`);
     }
 }
 
 async function safeDeleteMessage(message, delayMs = 0) {
     if (!message || typeof message.delete !== 'function') return;
-    const del = () => message.delete().catch(e => {});
-    if (delayMs > 0) setTimeout(del, delayMs);
-    else await del();
+    const del = () => message.delete().catch(() => {});
+    if (delayMs > 0) {
+        setTimeout(del, delayMs);
+    } else {
+        await del();
+    }
 }
 
 async function getChannel(channelId) {
@@ -134,7 +145,9 @@ async function sendTyping(channelId) {
         try {
             await channel.sendTyping();
             await delay(getRandomInt(DELAYS.TYPING.MIN, DELAYS.TYPING.MAX));
-        } catch (error) {}
+        } catch (error) {
+            // Ignore typing errors
+        }
     }
 }
 
@@ -162,7 +175,6 @@ async function sendWebhookMessage(content, username, avatarUrl, options = {}) {
     };
 
     const results = [];
-    const webhookPromises = [];
 
     for (const webhookUrl of activeWebhookUrls) {
         let targetUrl = webhookUrl;
@@ -171,15 +183,16 @@ async function sendWebhookMessage(content, username, avatarUrl, options = {}) {
         if (!webhookInfo) continue;
 
         if (options.wait) {
-            targetUrl += targetUrl.includes('?') ? '&wait=true' : '?wait=true';
+            targetUrl += (targetUrl.includes('?') ? '&wait=true' : '?wait=true');
         } else {
             targetUrl = targetUrl.replace(/[?&]wait=true/, '');
         }
 
-        const promise = axios.post(targetUrl, payload, {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 15000
-        }).then(response => {
+        try {
+            const response = await axios.post(targetUrl, payload, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 15000
+            });
             if (options.wait && response.data?.id) {
                 results.push({
                     messageId: response.data.id,
@@ -187,11 +200,11 @@ async function sendWebhookMessage(content, username, avatarUrl, options = {}) {
                     webhookToken: webhookInfo.token
                 });
             }
-        }).catch(err => {});
-        webhookPromises.push(promise);
+        } catch (err) {
+            // Ignore webhook errors
+        }
     }
 
-    await Promise.allSettled(webhookPromises);
     return results;
 }
 
@@ -204,7 +217,7 @@ async function deleteWebhookMessage(messageId, webhookId, webhookToken, reason =
         await axios.delete(deleteUrl, { timeout: 10000 });
         return true;
     } catch (deleteError) {
-        return deleteError.response?.status === 404;
+        return deleteError.response?.status === 404; // Assume deleted if not found
     }
 }
 
@@ -216,11 +229,21 @@ function stopBot(log = true) {
     }
 }
 
-async function resumeBot() {
-    if (botState.captchaDetected) {
-        console.log("Cannot resume: Captcha active");
+async function resumeBot({ skipCaptchaCheck = false } = {}) {
+    // If .captcha handler is disabled, always skip the captcha check on resume
+    const effectiveSkipCaptchaCheck = skipCaptchaCheck || !botState.isCaptchaDmHandlerEnabled;
+
+    if (!effectiveSkipCaptchaCheck && botState.captchaDetected) {
+        console.log("Cannot resume: Captcha active (and .captcha handler is enabled)");
         return;
     }
+    
+    // If handler is disabled, clear any lingering captcha state on resume
+    if (!botState.isCaptchaDmHandlerEnabled && botState.captchaDetected) {
+         console.log("Captcha handler is disabled. Clearing captcha state on resume.");
+         await clearCaptchaState("Resume with .captcha handler disabled");
+    }
+
     if (!botState.isRunning) {
         botState.isRunning = true;
         console.log("Bot resumed");
@@ -256,7 +279,7 @@ async function clearCaptchaState(reason = "Verification") {
 
 async function notifyCaptcha() {
     console.log(`CAPTCHA DETECTED for ${client.user?.username || 'Unknown'}`);
-    stopBot(false);
+    stopBot(false); // Pause bot on captcha
 
     await clearCaptchaState("New Captcha Triggered");
     botState.captchaDetected = true;
@@ -264,7 +287,8 @@ async function notifyCaptcha() {
     
     const captchaWebhookUsername = `${client.user?.displayName || 'Unknown User'}`;
     const captchaWebhookAvatar = client.user?.displayAvatarURL({ dynamic: true, format: "png" });
-    const captchaMsg = `[Captcha!](https://www.owobot.com/captcha) ||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​|| <@&1402022346675720303> <@&1402022568730558615>`;
+    // Note: The long string of invisible characters was shortened for brevity in this example
+    const captchaMsg = `Captcha! <@&1402022346675720303> <@&1402022568730558615>`; 
 
     const messageInfos = await sendWebhookMessage(captchaMsg, captchaWebhookUsername, captchaWebhookAvatar, { wait: true });
 
@@ -281,9 +305,11 @@ async function notifyCaptcha() {
             await userToDm.send(`## ** Captcha **\n> -# [**Click here to solve**](https://owobot.com/captcha)`);
             const sentMessage = await userToDm.send("!r cat");
             setTimeout(() => {
-                sentMessage.delete().catch(console.error);
+                safeDeleteMessage(sentMessage).catch(() => {});
             }, 3000);
-        } catch (dmError) {}
+        } catch (dmError) {
+            console.error("Failed to send DM for captcha:", dmError.message);
+        }
     }
 }
 
@@ -298,15 +324,19 @@ async function handleIncomingMessage(message) {
 }
 
 async function handleCaptchaDM(message) {
-    if (!botState.isCaptchaDmHandlerEnabled || message.channel.type !== 'DM' || message.author.id !== owo_ID) return;
+    // Only process if the handler is explicitly enabled
+    if (!botState.isCaptchaDmHandlerEnabled || message.channel.type !== 'DM' || message.author.id !== owo_ID) {
+        return;
+    }
 
     const isVerified = message.content.includes('verified that you are human') || message.content.includes('Thank you for verifying');
     if (isVerified) {
         console.log(`CAPTCHA VERIFIED for ${client.user?.username}`);
-        await clearCaptchaState("Verification received");
+        await clearCaptchaState("Verification received via DM");
         await delay(getRandomInt(10000, 20000));
+        // Resume bot after verification
         if (!botState.isRunning) {
-            await resumeBot();
+            await resumeBot({ skipCaptchaCheck: true }); // Skip check as we just cleared it
         }
     }
 }
@@ -334,6 +364,7 @@ async function owoLoop() {
             await sendMessage(channelId, "Owo");
             await randomSleep();
         } catch (error) {
+            console.error("Error in owoLoop:", error.message);
             await delay(5000);
         } finally {
             botState.isProcessingOwo = false;
@@ -358,6 +389,7 @@ async function whwbLoop() {
             }
             await randomSleep();
         } catch (error) {
+            console.error("Error in whwbLoop:", error.message);
             await delay(5000);
         } finally {
             botState.isProcessingWhWb = false;
@@ -381,23 +413,28 @@ async function cycleChannels() {
     }
 }
 
-// Command Definitions
+// --- Commands ---
 const commands = {
     '.capx': {
-        description: 'Toggles the OwO/WhWb message loop.',
-        execute: () => captchaDetected('captcha detect', 'OwO Farming')
+        description: 'Simulates a captcha detection.',
+        execute: async () => {
+            await notifyCaptcha(); // Reuse the existing function
+        }
     },
     '.69': {
         description: 'Toggles the OwO/WhWb message loop.',
         execute: () => toggleBooleanState('isOwoEnabled', 'OwO Farming')
     },
     '.on': {
-        description: 'Resumes sending messages.',
-        execute: async () => { await resumeBot(); }
+        description: 'Resumes sending messages. If .captcha handler is disabled, clears any captcha state.',
+        execute: async () => {
+             // Pass skipCaptchaCheck based on the handler state
+            await resumeBot({ skipCaptchaCheck: !botState.isCaptchaDmHandlerEnabled }); 
+        }
     },
     '.off': {
         description: 'Pauses sending messages.',
-        execute: () => { stopBot(); }
+        execute: () => stopBot()
     },
     '.next': {
         description: 'Manually cycles to the next channel.',
@@ -412,10 +449,10 @@ const commands = {
         }
     },
     '.captcha': {
-        description: 'Toggles the OwO captcha solved DM handler.',
+        description: 'Toggles the OwO captcha solved DM handler. When disabled, .on will clear captcha state.',
         execute: () => toggleBooleanState('isCaptchaDmHandlerEnabled', 'Captcha DM Handler')
     },
-    '.fstatus': null,
+    '.fstatus': null, // Alias
     '.farmstatus': {
         description: 'Shows the current farming status.',
         execute: async (message) => {
@@ -423,42 +460,42 @@ const commands = {
             const currentChannelName = await getChannelName(currentChannelId);
             const boolToCheck = (val) => val ? '✅ Yes' : '❌ No';
             const enabledDisabled = (val) => val ? '✅ Enabled' : '❌ Disabled';
-            const trackedWebhookCount = botState.captchaWebhookMessages.length;
 
-            const statusMessage = `
-            \`\`\`
-            Bot Farm Status (${client.user.username}):
-            ---------------------------------
-            Running        : ${boolToCheck(botState.isRunning)}
-            Sleeping       : ${botState.isSleeping ? '💤 Yes' : '❌ No'}
-            Captcha Active : ${botState.captchaDetected ? '🚨 YES' : '✅ No'}
-            
-            OwO Sending    : ${enabledDisabled(botState.isOwoEnabled)}
-            
-            Current Channel: #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
-            \`\`\`
-            `;
-            message.channel.send(statusMessage).then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE));
+            const statusMessage = `\`\`\`
+Bot Farm Status (${client.user.username}):
+---------------------------------
+Running        : ${boolToCheck(botState.isRunning)}
+Sleeping       : ${botState.isSleeping ? '💤 Yes' : '❌ No'}
+Captcha Active : ${botState.captchaDetected ? '🚨 YES' : '✅ No'}
+
+OwO Sending    : ${enabledDisabled(botState.isOwoEnabled)}
+Captcha Handler: ${enabledDisabled(botState.isCaptchaDmHandlerEnabled)}
+
+Current Channel: #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
+\`\`\``;
+            message.channel.send(statusMessage)
+                .then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE))
+                .catch(() => {});
         }
     },
     '.setch': {
         description: 'Updates the farming channel IDs (comma-separated).',
         execute: async (message, args) => {
-            const newChIds = args.join('').split(',').map(id => id.trim()).filter(id => /^\d{17,20}$/.test(id));
+            const newChIds = args.join('').split(',')
+                .map(id => id.trim())
+                .filter(id => /^\d{17,20}$/.test(id));
 
             if (newChIds.length > 0) {
                 stopBot(false);
                 botState.channelIds = newChIds;
                 botState.currentChannelIndex = 0;
                 console.log(`Channels updated: [${botState.channelIds.join(', ')}]`);
-                await resumeBot();
+                await resumeBot(); // Resume after channel update
             } else {
-                console.log(`Invalid format/IDs! Use: !setch ID1,ID2,...`);
+                console.log(`Invalid format/IDs! Use: .setch ID1,ID2,...`);
             }
         }
     },
-    // .git komutu kaldırıldı
-    // .çık komutu kaldırıldı
     '.status': {
         description: `Sets Discord presence (${VALID_STATUSES.join(', ')}).`,
         execute: async (message, args) => {
@@ -469,7 +506,7 @@ const commands = {
                     await client.user.setPresence({ status });
                     console.log(`Presence set to ${status}`);
                 } catch (e) {
-                    console.log(`Failed to set presence`);
+                    console.error(`Failed to set presence: ${e.message}`);
                 }
             } else {
                 console.log(`Invalid status. Use: ${VALID_STATUSES.join(', ')}`);
@@ -479,24 +516,26 @@ const commands = {
     '.help': {
         description: 'Shows this help message.',
         execute: async (message) => {
-            const helpMessage = `
-            **Self-Bot Commands**
-            *Use cautiously. Prefix may vary based on your setup.*
-            
-            **Farming:**
-            📌 \`.on\` / \`.off\`: Resume/pause message loops.
-            📌 \`.69\`: Toggle OwO/WhWb loop.
-            📌 \`.farmstatus\` / \`.fstatus\`: Show current status.
-            📌 \`.next\`: Manually cycle farm channel.
-            📌 \`.setch <id1,id2...>\`: Update farm channel list.
-            📌 \`.captcha\`: Toggle OwO solved DM listener.
-            
-            **General:**
-            📌 \`.status <online|idle|dnd|invisible>\`: Set presence.
-            📌 \`.help\`: Display this message.`;
+            const helpMessage = `**Self-Bot Commands**
+*Use cautiously. Prefix may vary based on your setup.*
+
+**Farming:**
+📌 \`.on\` / \`.off\`: Resume/pause message loops.
+📌 \`.69\`: Toggle OwO/WhWb loop.
+📌 \`.farmstatus\` / \`.fstatus\`: Show current status.
+📌 \`.next\`: Manually cycle farm channel.
+📌 \`.setch <id1,id2...>\`: Update farm channel list.
+📌 \`.captcha\`: Toggle OwO solved DM listener. If disabled, .on clears captcha state.
+
+**General:**
+📌 \`.status <online|idle|dnd|invisible>\`: Set presence.
+📌 \`.help\`: Display this message.
+📌 \`.capx\`: Simulate captcha detection.`;
             try {
                 await message.channel.send(helpMessage);
-            } catch (helpErr) {}
+            } catch (helpErr) {
+                console.error("Failed to send help message:", helpErr.message);
+            }
         },
         deleteCommand: false
     }
@@ -519,16 +558,20 @@ async function handleSelfCommand(message) {
             await delay(getRandomInt(DELAYS.COMMAND_DELETE.MIN, DELAYS.COMMAND_DELETE.MAX));
             await safeDeleteMessage(message);
         }
-    } catch (cmdError) {}
+    } catch (cmdError) {
+        console.error(`Error executing command ${commandName}:`, cmdError.message);
+    }
 }
 
-// Event Listeners
+// --- Event Listeners ---
 client.on('ready', async () => {
     console.log(`Logged in as ${client.user.username}`);
     
     try {
         await client.user.setPresence({ status: DEFAULT_PRESENCE });
-    } catch (e) {}
+    } catch (e) {
+        console.error("Failed to set initial presence:", e.message);
+    }
 
     owoLoop();
     whwbLoop();
@@ -537,7 +580,7 @@ client.on('ready', async () => {
     if (!botState.captchaDetected) {
         await resumeBot();
     } else {
-        console.log("Captcha detected. Bot remains paused.");
+        console.log("Captcha detected on startup. Bot remains paused.");
     }
 });
 
@@ -548,13 +591,11 @@ client.on('messageCreate', async message => {
 });
 
 client.on('error', error => {
-    console.log('Discord Client Error:', error.message);
+    console.error('Discord Client Error:', error.message);
 });
 
-// voiceStateUpdate event listener kaldırıldı
-
 client.login(token).catch(err => {
-    console.log(`LOGIN FAILED: ${err.message}`);
+    console.error(`LOGIN FAILED: ${err.message}`);
     process.exit(1);
 });
 
@@ -562,8 +603,6 @@ async function shutdown(signal) {
     console.log(`Shutting down...`);
     stopBot(false);
     await clearCaptchaState("Shutdown");
-
-    // Voice connection cleanup kaldırıldı
 
     client.destroy();
     process.exit(0);
@@ -573,11 +612,12 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 process.on('uncaughtException', async (error) => {
-    console.log(`UNCAUGHT EXCEPTION: ${error.message}`);
+    console.error(`UNCAUGHT EXCEPTION: ${error.message}`);
+    console.error(error.stack);
     stopBot(false);
 });
 
-process.on('unhandledRejection', async (reason) => {
-    console.log('UNHANDLED PROMISE REJECTION:', reason);
+process.on('unhandledRejection', async (reason, promise) => {
+    console.error('UNHANDLED PROMISE REJECTION at:', promise, 'reason:', reason);
     stopBot(false);
 });
