@@ -2,6 +2,8 @@ name: Run Discord Bot (6h loop)
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"   # her 6 saatte bir (00:00, 06:00, 12:00, 18:00)
 
 concurrency:
   group: discord-bot
@@ -56,9 +58,3 @@ jobs:
           BOT_PID=$!
           sleep 21600   # 6 saat
           kill $BOT_PID || true
-
-      - name: Trigger next run
-        run: |
-          gh workflow run "Run Discord Bot (6h loop)" --ref ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
