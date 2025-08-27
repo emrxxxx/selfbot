@@ -48,7 +48,7 @@ async function loadTokens() {
 
 function spawnBot(token, index) {
     const tokenSuffix = `...${token.slice(-6)}`;
-    addToLog(`Bot ${index + 1} başlatılıyor (Token: ${tokenSuffix})`, chalk.cyan);
+    // addToLog(`Bot ${index + 1} başlatılıyor (Token: ${tokenSuffix})`, chalk.cyan);
     printLogBox();
 
     const child = fork(BOT_SCRIPT, [token], { stdio: 'inherit' });
@@ -88,3 +88,4 @@ function spawnBot(token, index) {
     addToLog('Tüm botlar başlatıldı', chalk.green);
     printLogBox();
 })();
+
