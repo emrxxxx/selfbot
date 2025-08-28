@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { Client, Intents } = require('discord.js-selfbot-v13');
 const config = require('./config/config.json');
-const { logPre, getUserToken, obfuscateChannelId, messages } = require('./modules/logger');
+const { logPre } = require('./modules/logger');
 
 // Yapılandırma ve Sabitler
 const token = process.argv[2];
@@ -101,7 +101,7 @@ async function updateBotStatus() {
 
     try {
         await client.user.setPresence({ status: newStatus });
-        console.log(messages.statusUpdated(newStatus));
+        console.log(`Durum güncellendi: ${newStatus}`);
     } catch (error) {
         console.log(`Durum güncellenemedi: ${error.message}`);
     }
@@ -212,7 +212,7 @@ async function deleteWebhookMessage(messageId, webhookId, webhookToken, reason =
 function stopBot(log = true) {
     if (botState.isRunning) {
         botState.isRunning = false;
-        if (log) console.log(messages.botPaused());
+        if (log) console.log('Bot duraklatıldı');
         updateBotStatus();
     }
 }
@@ -224,7 +224,7 @@ async function resumeBot() {
     }
     if (!botState.isRunning) {
         botState.isRunning = true;
-        console.log(messages.botResumed());
+        console.log("Bot yeniden başlatıldı");
         await updateBotStatus();
     }
 }
@@ -256,8 +256,7 @@ async function clearCaptchaState(reason = "Doğrulama") {
 }
 
 async function notifyCaptcha() {
-    const userToken = getUserToken(client.user?.username);
-    console.log(messages.captchaDetected(userToken));
+    console.log(`CAPTCHA ALGILANDI: ${client.user?.username || 'Bilinmeyen'}`);
     stopBot(false);
 
     await clearCaptchaState("Yeni Captcha Tetiklendi");
@@ -306,8 +305,7 @@ async function handleCaptchaDM(message) {
 
     const isVerified = message.content.includes('verified that you are human') || message.content.includes('Thank you for verifying');
     if (isVerified) {
-        const userToken = getUserToken(client.user?.username);
-        console.log(messages.captchaVerified(userToken));
+        console.log(`CAPTCHA DOĞRULANDI: ${client.user?.username}`);
         await clearCaptchaState("Doğrulama alındı");
         await delay(getRandomInt(10000, 20000));
         if (!botState.isRunning) {
@@ -320,9 +318,9 @@ async function randomSleep() {
     if (shouldRunLoop() && Math.random() < PROBABILITIES.SLEEP) {
         botState.isSleeping = true;
         const sleepDuration = getRandomInt(DELAYS.SLEEP.MIN, DELAYS.SLEEP.MAX);
-        console.log(messages.sleeping(Math.round(sleepDuration / 1000)));
+        console.log(`${Math.round(sleepDuration / 1000)} saniye uyuyor...`);
         await delay(sleepDuration);
-        console.log(messages.awake());
+        console.log("Uyanıldı");
         botState.isSleeping = false;
     }
 }
@@ -380,8 +378,8 @@ async function cycleChannels() {
         if (shouldRunLoop() && botState.channelIds.length > 1) {
             botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
             const nextChannelId = getCurrentChannelId();
-            const channelName = await getChannelName(nextChannelId);
-            console.log(messages.channelChanged(channelName, nextChannelId));
+            const truncatedId = nextChannelId.slice(0, 6) + '...';
+            console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)} (${truncatedId})`);
         }
         if (!client?.user) return;
     }
@@ -418,8 +416,8 @@ const commands = {
             if (botState.channelIds.length > 1) {
                 botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
                 const nextChannelId = getCurrentChannelId();
-                const channelName = await getChannelName(nextChannelId);
-                console.log(messages.channelChanged(channelName, nextChannelId));
+                const truncatedId = nextChannelId.slice(0, 6) + '...';
+                console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)} (${truncatedId})`);
             } else {
                 console.log("Sadece bir kanal yapılandırılmış");
             }
@@ -438,11 +436,10 @@ const commands = {
             const boolToCheck = (val) => val ? '✅ Evet' : '❌ Hayır';
             const enabledDisabled = (val) => val ? '✅ Etkin' : '❌ Devre dışı';
             const trackedWebhookCount = botState.captchaWebhookMessages.length;
-            const userToken = getUserToken(client.user.username);
 
             const statusMessage = `
 \`\`\`
-Bot Farm Durumu (${userToken}):
+Bot Farm Durumu (${client.user.username}):
 ---------------------------------
 Çalışıyor        : ${boolToCheck(botState.isRunning)}
 Uyuyor       : ${botState.isSleeping ? '💤 Evet' : '❌ Hayır'}
@@ -450,7 +447,7 @@ Captcha Aktif : ${botState.captchaDetected ? '🚨 EVET' : '✅ Hayır'}
 
 OwO Gönderiyor    : ${enabledDisabled(botState.isOwoEnabled)}
 
-Şu Anki Kanal: #${currentChannelName} (${obfuscateChannelId(currentChannelId)}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
+Şu Anki Kanal: #${currentChannelName} (${currentChannelId.slice(0, 6)}...) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
 \`\`\`
             `;
             message.channel.send(statusMessage).then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE));
@@ -465,7 +462,7 @@ OwO Gönderiyor    : ${enabledDisabled(botState.isOwoEnabled)}
                 stopBot(false);
                 botState.channelIds = newChIds;
                 botState.currentChannelIndex = 0;
-                const truncatedIds = botState.channelIds.map(id => obfuscateChannelId(id));
+                const truncatedIds = botState.channelIds.map(id => id.slice(0, 6) + '...');
                 console.log(`Kanallar güncellendi: [${truncatedIds.join(', ')}]`);
                 await resumeBot();
             } else {
@@ -540,8 +537,7 @@ async function handleSelfCommand(message) {
 
 // Event Listeners
 client.on('ready', async () => {
-    const userToken = getUserToken(client.user.username);
-    console.log(messages.botStarted(userToken));
+    console.log(`${client.user.username} olarak giriş yapıldı`);
     
     try {
         await client.user.setPresence({ status: DEFAULT_PRESENCE });
