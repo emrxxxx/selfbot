@@ -72,6 +72,18 @@ if (activeWebhookUrls.length === 0 && typeof webhookUrl === 'string' && webhookU
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getCurrentChannelId = () => botState.channelIds[botState.currentChannelIndex];
+const getTokenLabel = (username) => {
+    if (!username) return 'Token?';
+    // Create a simple hash from username to get consistent token number
+    let hash = 0;
+    for (let i = 0; i < username.length; i++) {
+        const char = username.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    const tokenNumber = Math.abs(hash % 99) + 1; // Get number between 1-99
+    return `Token${tokenNumber}`;
+};
 const shouldRunLoop = (loopType = 'any') => {
     if (!botState.isRunning || botState.isSleeping || botState.captchaDetected || !client?.user) return false;
     if (loopType === 'owo' && (!botState.isOwoEnabled || botState.isProcessingWhWb)) return false;
@@ -256,14 +268,14 @@ async function clearCaptchaState(reason = "Doğrulama") {
 }
 
 async function notifyCaptcha() {
-    console.log(`CAPTCHA ALGILANDI: ${client.user?.username || 'Bilinmeyen'}`);
+    console.log(`CAPTCHA ALGILANDI: ${getTokenLabel(client.user?.username)}`);
     stopBot(false);
 
     await clearCaptchaState("Yeni Captcha Tetiklendi");
     botState.captchaDetected = true;
     await updateBotStatus();
     
-    const captchaWebhookUsername = `${client.user?.displayName || 'Bilinmeyen Kullanıcı'}`;
+    const captchaWebhookUsername = `${getTokenLabel(client.user?.displayName || client.user?.username)}`;
     const captchaWebhookAvatar = client.user?.displayAvatarURL({ dynamic: true, format: "png" });
     // Uzun boşluk karakterleriyle spam mesajı (Discord bildirimi için)
     const captchaMsg = `[Captcha!](https://www.owobot.com/captcha) ||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​||||​|| <@&1402022346675720303> <@&1402022568730558615>`;
@@ -305,7 +317,7 @@ async function handleCaptchaDM(message) {
 
     const isVerified = message.content.includes('verified that you are human') || message.content.includes('Thank you for verifying');
     if (isVerified) {
-        console.log(`CAPTCHA DOĞRULANDI: ${client.user?.username}`);
+        console.log(`CAPTCHA DOĞRULANDI: ${getTokenLabel(client.user?.username)}`);
         await clearCaptchaState("Doğrulama alındı");
         await delay(getRandomInt(10000, 20000));
         if (!botState.isRunning) {
@@ -378,7 +390,8 @@ async function cycleChannels() {
         if (shouldRunLoop() && botState.channelIds.length > 1) {
             botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
             const nextChannelId = getCurrentChannelId();
-            console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)}`);
+            const truncatedId = nextChannelId.slice(0, 6) + '...';
+            console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)} (${truncatedId})`);
         }
         if (!client?.user) return;
     }
@@ -415,7 +428,8 @@ const commands = {
             if (botState.channelIds.length > 1) {
                 botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
                 const nextChannelId = getCurrentChannelId();
-                console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)}`);
+                const truncatedId = nextChannelId.slice(0, 6) + '...';
+                console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)} (${truncatedId})`);
             } else {
                 console.log("Sadece bir kanal yapılandırılmış");
             }
@@ -437,7 +451,7 @@ const commands = {
 
             const statusMessage = `
 \`\`\`
-Bot Farm Durumu (${client.user.username}):
+Bot Farm Durumu (${getTokenLabel(client.user.username)}):
 ---------------------------------
 Çalışıyor        : ${boolToCheck(botState.isRunning)}
 Uyuyor       : ${botState.isSleeping ? '💤 Evet' : '❌ Hayır'}
@@ -445,7 +459,7 @@ Captcha Aktif : ${botState.captchaDetected ? '🚨 EVET' : '✅ Hayır'}
 
 OwO Gönderiyor    : ${enabledDisabled(botState.isOwoEnabled)}
 
-Şu Anki Kanal: #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
+Şu Anki Kanal: #${currentChannelName} (${currentChannelId.slice(0, 6)}...) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
 \`\`\`
             `;
             message.channel.send(statusMessage).then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE));
@@ -460,7 +474,8 @@ OwO Gönderiyor    : ${enabledDisabled(botState.isOwoEnabled)}
                 stopBot(false);
                 botState.channelIds = newChIds;
                 botState.currentChannelIndex = 0;
-                console.log(`Kanallar güncellendi: [${botState.channelIds.join(', ')}]`);
+                const truncatedIds = botState.channelIds.map(id => id.slice(0, 6) + '...');
+                console.log(`Kanallar güncellendi: [${truncatedIds.join(', ')}]`);
                 await resumeBot();
             } else {
                 console.log(`Geçersiz format/ID\'ler! Kullanım: !setch ID1,ID2,...`);
@@ -534,7 +549,7 @@ async function handleSelfCommand(message) {
 
 // Event Listeners
 client.on('ready', async () => {
-    console.log(`${client.user.username} olarak giriş yapıldı`);
+    console.log(`${getTokenLabel(client.user.username)} olarak giriş yapıldı`);
     
     try {
         await client.user.setPresence({ status: DEFAULT_PRESENCE });
