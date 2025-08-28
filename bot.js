@@ -378,8 +378,7 @@ async function cycleChannels() {
         if (shouldRunLoop() && botState.channelIds.length > 1) {
             botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
             const nextChannelId = getCurrentChannelId();
-            const truncatedId = nextChannelId.slice(0, 6) + '...';
-            console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)} (${truncatedId})`);
+            console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)}`);
         }
         if (!client?.user) return;
     }
@@ -416,8 +415,7 @@ const commands = {
             if (botState.channelIds.length > 1) {
                 botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
                 const nextChannelId = getCurrentChannelId();
-                const truncatedId = nextChannelId.slice(0, 6) + '...';
-                console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)} (${truncatedId})`);
+                console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)}`);
             } else {
                 console.log("Sadece bir kanal yapılandırılmış");
             }
@@ -447,7 +445,7 @@ Captcha Aktif : ${botState.captchaDetected ? '🚨 EVET' : '✅ Hayır'}
 
 OwO Gönderiyor    : ${enabledDisabled(botState.isOwoEnabled)}
 
-Şu Anki Kanal: #${currentChannelName} (${currentChannelId.slice(0, 6)}...) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
+Şu Anki Kanal: #${currentChannelName} (${currentChannelId}) [${botState.currentChannelIndex + 1}/${botState.channelIds.length}]
 \`\`\`
             `;
             message.channel.send(statusMessage).then(reply => safeDeleteMessage(reply, DELAYS.STATUS_MESSAGE_DELETE));
@@ -462,8 +460,7 @@ OwO Gönderiyor    : ${enabledDisabled(botState.isOwoEnabled)}
                 stopBot(false);
                 botState.channelIds = newChIds;
                 botState.currentChannelIndex = 0;
-                const truncatedIds = botState.channelIds.map(id => id.slice(0, 6) + '...');
-                console.log(`Kanallar güncellendi: [${truncatedIds.join(', ')}]`);
+                console.log(`Kanallar güncellendi: [${botState.channelIds.join(', ')}]`);
                 await resumeBot();
             } else {
                 console.log(`Geçersiz format/ID\'ler! Kullanım: !setch ID1,ID2,...`);
