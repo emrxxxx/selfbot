@@ -391,7 +391,7 @@ async function cycleChannels() {
             botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
             const nextChannelId = getCurrentChannelId();
             const truncatedId = nextChannelId.slice(0, 6) + '...';
-            console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)} (${truncatedId})`);
+            console.log(`Kanal değiştirildi: (${truncatedId})`);
         }
         if (!client?.user) return;
     }
@@ -429,7 +429,7 @@ const commands = {
                 botState.currentChannelIndex = (botState.currentChannelIndex + 1) % botState.channelIds.length;
                 const nextChannelId = getCurrentChannelId();
                 const truncatedId = nextChannelId.slice(0, 6) + '...';
-                console.log(`Kanal değiştirildi: #${await getChannelName(nextChannelId)} (${truncatedId})`);
+                console.log(`Kanal değiştirildi: (${truncatedId})`);
             } else {
                 console.log("Sadece bir kanal yapılandırılmış");
             }
