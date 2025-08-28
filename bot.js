@@ -403,7 +403,7 @@ const commands = {
         description: 'OwO/WhWb mesaj döngüsünü açar/kapatır.',
         execute: () => captchaDetected('captcha detect', 'OwO Farming')
     },
-    '.start': {
+    '.owo': {
         description: 'OwO/WhWb mesaj döngüsünü açar/kapatır.',
         execute: () => toggleBooleanState('isOwoEnabled', 'OwO Farming')
     },
@@ -510,7 +510,7 @@ OwO Gönderiyor    : ${enabledDisabled(botState.isOwoEnabled)}
 
 **Farming:**
     📌 \`.on\` / \`.off\`: Mesaj döngülerini devam ettir/duraklat.
-    📌 \`.start\`: OwO/WhWb döngüsünü aç/kapat.
+    📌 \`.owo\`: OwO/WhWb döngüsünü aç/kapat.
     📌 \`.farmstatus\` / \`.fstatus\`: Mevcut durumu göster.
     📌 \`.next\`: Manuel olarak farm kanalını değiştir.
     📌 \`.setch <id1,id2...>\`: Farm kanal listesini güncelle.
