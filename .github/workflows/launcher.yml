@@ -3,7 +3,7 @@ name: Run Discord Bot (6h loop)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"   # Her 6 saatte bir (00:00, 06:00, 12:00, 18:00)
+    - cron: "0 */6 * * *"   # her 6 saatte bir (00:00, 06:00, 12:00, 18:00)
 
 concurrency:
   group: discord-bot
@@ -48,3 +48,9 @@ jobs:
             "owo_ID": "408785106942164992",
             "reaction_ID": "519287796549156864",
             "webhookUrls": ${WEBHOOK_JSON},
+            "DEFAULT_PRESENCE": "invisible"
+          }
+          EOF
+
+      - name: Run bot for 6 hours
+        run: timeout 6h node launcher.js
