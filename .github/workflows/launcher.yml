@@ -26,18 +26,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'npm'
 
       - name: Install dependencies
         run: npm install --production
 
       - name: Convert secrets into JSON arrays
+        id: convert
         run: |
-          CH_JSON=$(jq -Rc 'split(",")' <<< "$CH_IDS")
-          WEBHOOK_JSON=$(jq -Rc 'split(",")' <<< "$WEBHOOKS")
+          CH_JSON=$(echo "$CH_IDS" | sed 's/, */","/g' | sed 's/^/["/' | sed 's/$/"]/')
+          WEBHOOK_JSON=$(echo "$WEBHOOKS" | sed 's/, */","/g' | sed 's/^/["/' | sed 's/$/"]/')
           echo "CH_JSON=$CH_JSON" >> $GITHUB_ENV
           echo "WEBHOOK_JSON=$WEBHOOK_JSON" >> $GITHUB_ENV
-
       - name: Generate config/config.json
         run: |
           mkdir -p config
@@ -51,6 +50,4 @@ jobs:
             "DEFAULT_PRESENCE": "invisible"
           }
           EOF
-
-      - name: Run bot for 6 hours
-        run: timeout 6h node launcher.js
+  
