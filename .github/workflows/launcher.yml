@@ -3,11 +3,7 @@ name: Run Discord Bot (Loop)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"   # her 6 saatte bir (00:00, 06:00, 12:00, 18:00)
-
-concurrency:
-  group: discord-bot
-  cancel-in-progress: true
+    - cron: "5 0 * * *"
 
 jobs:
   run-bot:
@@ -28,13 +24,33 @@ jobs:
           node-version: 18
 
       - name: Install dependencies
-        run: npm install --omit=dev
+        run: npm install --production
 
       - name: Convert secrets into JSON arrays
         run: |
           CH_JSON=$(echo "$CH_IDS" | sed 's/, */","/g' | sed 's/^/["/' | sed 's/$/"]/')
+          WEBHOOK_JSON=$(echo "$WEBHOOKS" | sed 's/, */","/g' | sed 's/^/["/' | sed 's/$/"]/')
           echo "CH_JSON=$CH_JSON" >> $GITHUB_ENV
+          echo "WEBHOOK_JSON=$WEBHOOK_JSON" >> $GITHUB_ENV
 
-      - name: Run bot (max 6h)
+      - name: Generate config/config.json
         run: |
-          timeout 6h node launcher.js
+          mkdir -p config
+          cat <<EOF > config/config.json
+          {
+            "tokens": ["${TOKEN1}", "${TOKEN2}"],
+            "CH_IDS": ${CH_JSON},
+            "owo_ID": "408785106942164992",
+            "reaction_ID": "519287796549156864",
+            "webhookUrls": ${WEBHOOK_JSON},
+            "DEFAULT_PRESENCE": "invisible"
+          }
+          EOF
+
+      - name: Run bot in loop
+        run: |
+          for i in {1..24}; do  # 24 kez, her seferinde 15 dakika
+            echo "Starting bot iteration $i"
+            timeout 900 node launcher.js || true  # 15 dakika
+            sleep 60  # 1 dakika ara
+          done
