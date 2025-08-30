@@ -3,7 +3,7 @@ name: Run Discord Bot (Loop)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "5 0 * * *"
+    - cron: "0 */6 * * *"   # Her 6 saatte bir
 
 jobs:
   run-bot:
@@ -47,10 +47,8 @@ jobs:
           }
           EOF
 
-      - name: Run bot in loop
+      - name: Run bot for 6 hours
         run: |
-          for i in {1..24}; do  # 24 kez, her seferinde 15 dakika
-            echo "Starting bot iteration $i"
-            timeout 900 node launcher.js || true  # 15 dakika
-            sleep 60  # 1 dakika ara
-          done
+          echo "Starting bot..."
+          timeout 21540 node launcher.js || true  # 5 saat 59 dakika
+          echo "Bot session completed"
